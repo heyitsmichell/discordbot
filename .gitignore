@@ -1,0 +1,17 @@
+.env
+
+*.db
+
+*.log
+discord.log
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+venv/
+.venv/
+
+.DS_Store
+Thumbs.db
