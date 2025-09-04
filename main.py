@@ -527,9 +527,15 @@ async def linktwitch(ctx):
     if not CLIENT_ID or not REDIRECT_URI:
         await ctx.author.send("OAuth not configured.")
         return
+    # broken
+    # url = (f"https://discord.com/api/oauth2/authorize"
+    #        f"?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
+    #        f"&response_type=code&scope=identify%20connections")
     url = (f"https://discord.com/api/oauth2/authorize"
-           f"?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
-           f"&response_type=code&scope=identify%20connections")
+       f"?client_id={CLIENT_ID}"
+       f"&redirect_uri={REDIRECT_URI}"
+       f"&response_type=code"
+       f"&scope=identify%20connections")
     try:
         await ctx.author.send(f"Click here to link your Twitch: {url}")
         await ctx.send(f"{ctx.author.mention}, check your DMs to link Twitch!")
@@ -560,9 +566,16 @@ async def linkyoutube(ctx):
     if not CLIENT_ID or not REDIRECT_URI:
         await ctx.author.send("OAuth not configured.")
         return
+    # broken
+    # url = (f"https://discord.com/api/oauth2/authorize"
+    #        f"?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
+    #        f"&response_type=code&scope=identify%20connections&state=youtube")
     url = (f"https://discord.com/api/oauth2/authorize"
-           f"?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
-           f"&response_type=code&scope=identify%20connections&state=youtube")
+       f"?client_id={CLIENT_ID}"
+       f"&redirect_uri={REDIRECT_URI}"
+       f"&response_type=code"
+       f"&scope=identify%20connections"
+       f"&state=youtube")
     try:
         await ctx.author.send(f"Click here to link your YouTube: {url}")
         await ctx.send(f"{ctx.author.mention}, check your DMs to link YouTube!")
