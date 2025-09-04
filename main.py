@@ -861,8 +861,13 @@ async def antiraid(ctx, action: str = None):
         await ctx.send("Usage: /antiraid enable|disable|status")
 
 # === Run Flask ===
+# def run_flask():
+#     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+
 def run_flask():
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
 
 flask_thread = threading.Thread(target=run_flask, daemon=True)
 flask_thread.start()
