@@ -106,47 +106,6 @@ def init_db():
 
 init_db()
 
-# previous code ignore
-# def get_guild_settings(guild_id: int) -> dict:
-#     conn = sqlite3.connect(DB_FILE)
-#     cur = conn.cursor()
-#     cur.execute("SELECT autoslow_enabled, check_frequency, time_configs, blacklisted_channels, whitelisted_channels, moderation_enabled, bad_words, banned_links, caps_threshold, spam_window, spam_threshold FROM guild_settings WHERE guild_id = ?", (str(guild_id),))
-#     row = cur.fetchone()
-#     conn.close()
-#     if not row:
-#         return {
-#             "autoslow_enabled": True,
-#             "check_frequency": DEFAULT_CHECK_FREQUENCY,
-#             "time_configs": DEFAULT_TIME_CONFIGS.copy(),
-#             "blacklisted_channels": [],
-#             "whitelisted_channels": [],
-#             "moderation_enabled": True,
-#             "bad_words": DEFAULT_BAD_WORDS.copy(),
-#             "banned_links": DEFAULT_BANNED_LINKS.copy(),
-#             "caps_threshold": DEFAULT_CAPS_THRESHOLD,
-#             "spam_window": DEFAULT_SPAM_WINDOW,
-#             "spam_threshold": DEFAULT_SPAM_THRESHOLD
-#         }
-#     autoslow_enabled, check_frequency, time_configs_json, blacklisted_json, whitelisted_json, moderation_enabled, bad_words_json, banned_links_json, caps_threshold, spam_window, spam_threshold = row
-#     def _parse(j, default):
-#         try:
-#             return json.loads(j) if j else default
-#         except Exception:
-#             return default
-#     return {
-#         "autoslow_enabled": bool(autoslow_enabled),
-#         "check_frequency": int(check_frequency or DEFAULT_CHECK_FREQUENCY),
-#         "time_configs": _parse(time_configs_json, DEFAULT_TIME_CONFIGS.copy()),
-#         "blacklisted_channels": _parse(blacklisted_json, []),
-#         "whitelisted_channels": _parse(whitelisted_json, []),
-#         "moderation_enabled": bool(moderation_enabled),
-#         "bad_words": _parse(bad_words_json, DEFAULT_BAD_WORDS.copy()),
-#         "banned_links": _parse(banned_links_json, DEFAULT_BANNED_LINKS.copy()),
-#         "caps_threshold": float(caps_threshold or DEFAULT_CAPS_THRESHOLD),
-#         "spam_window": int(spam_window or DEFAULT_SPAM_WINDOW),
-#         "spam_threshold": int(spam_threshold or DEFAULT_SPAM_THRESHOLD)
-#     }
-
 def get_guild_settings(guild_id: int) -> dict:
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
@@ -203,31 +162,6 @@ def get_guild_settings(guild_id: int) -> dict:
         "join_window": int(join_window or DEFAULT_JOIN_WINDOW),
         "min_account_age_days": int(min_account_age_days or DEFAULT_ACCOUNT_AGE_DAYS)
     }
-
-# previous code ignore
-# def save_guild_settings(guild_id: int, settings: dict):
-#     conn = sqlite3.connect(DB_FILE)
-#     cur = conn.cursor()
-#     cur.execute("""
-#     INSERT OR REPLACE INTO guild_settings (
-#         guild_id, autoslow_enabled, check_frequency, time_configs, blacklisted_channels, whitelisted_channels, moderation_enabled, bad_words, banned_links, caps_threshold, spam_window, spam_threshold
-#     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-#     """, (
-#         str(guild_id),
-#         1 if settings.get("autoslow_enabled", True) else 0,
-#         int(settings.get("check_frequency", DEFAULT_CHECK_FREQUENCY)),
-#         json.dumps(settings.get("time_configs", DEFAULT_TIME_CONFIGS)),
-#         json.dumps(settings.get("blacklisted_channels", [])),
-#         json.dumps(settings.get("whitelisted_channels", [])),
-#         1 if settings.get("moderation_enabled", True) else 0,
-#         json.dumps(settings.get("bad_words", DEFAULT_BAD_WORDS)),
-#         json.dumps(settings.get("banned_links", DEFAULT_BANNED_LINKS)),
-#         float(settings.get("caps_threshold", DEFAULT_CAPS_THRESHOLD)),
-#         int(settings.get("spam_window", DEFAULT_SPAM_WINDOW)),
-#         int(settings.get("spam_threshold", DEFAULT_SPAM_THRESHOLD))
-#     ))
-#     conn.commit()
-#     conn.close()
 
 def save_guild_settings(guild_id: int, settings: dict):
     conn = sqlite3.connect(DB_FILE)
@@ -499,7 +433,6 @@ async def bot_help(ctx):
 
         "**Auto-slowmode (Administrator)**\n"
         "/autoslow enable|disable|status (Currently applying to all channels)\n"
-        "/autoslow_channel add|remove|list #channel (Disabled)\n"
         "/autoslow_blacklist add|remove|list #channel (Broken)\n"
         "/set_slowmode_thresholds 50:30,20:15,10:5,0:0 — /set_slowmode_thresholds 10:5 -> every 10 messages = 5s slowmode (Testing)\n"
         "/set_check_frequency <seconds> — check how frequently for /set_slowmode_thresholds (Testing)\n\n"
@@ -507,8 +440,6 @@ async def bot_help(ctx):
         "/moderation enable|disable\n"
         "/badword add|remove|list <word>\n"
         "/bannedlink add|remove|list <link>\n"
-        "/timeout <member> <seconds> [reason] — Timeout a member (Disabled)\n"
-        "/ban <member> [reason] — Ban a member (Disabled)\n"
         "/unban <user_id> — Unban a user via their ID\n\n"
         
         "**Anti-Raid (Administrator)**\n"
@@ -527,10 +458,6 @@ async def linktwitch(ctx):
     if not CLIENT_ID or not REDIRECT_URI:
         await ctx.author.send("OAuth not configured.")
         return
-    # broken
-    # url = (f"https://discord.com/api/oauth2/authorize"
-    #        f"?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
-    #        f"&response_type=code&scope=identify%20connections")
     url = (f"https://discord.com/api/oauth2/authorize"
        f"?client_id={CLIENT_ID}"
        f"&redirect_uri={REDIRECT_URI}"
@@ -566,10 +493,6 @@ async def linkyoutube(ctx):
     if not CLIENT_ID or not REDIRECT_URI:
         await ctx.author.send("OAuth not configured.")
         return
-    # broken
-    # url = (f"https://discord.com/api/oauth2/authorize"
-    #        f"?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
-    #        f"&response_type=code&scope=identify%20connections&state=youtube")
     url = (f"https://discord.com/api/oauth2/authorize"
        f"?client_id={CLIENT_ID}"
        f"&redirect_uri={REDIRECT_URI}"
@@ -659,25 +582,6 @@ async def autoslow(ctx, action: str = None):
         await ctx.send(f"Auto-slowmode is {'enabled' if settings['autoslow_enabled'] else 'disabled'}.")
     else:
         await ctx.send("Usage: /autoslow enable|disable|status")
-
-# @bot.command()
-# @commands.has_permissions(administrator=True)
-# async def autoslow_channel(ctx, action: str = None, channel: discord.TextChannel = None):
-#     settings = get_guild_settings(ctx.guild.id)
-#     wl = settings.get("whitelisted_channels", [])
-#     if action == "add" and channel:
-#         if channel.id not in wl: wl.append(channel.id)
-#         settings["whitelisted_channels"] = wl; save_guild_settings(ctx.guild.id, settings)
-#         await ctx.send(f"✅ Added {channel.mention} to auto-slowmode whitelist.")
-#     elif action == "remove" and channel:
-#         if channel.id in wl: wl.remove(channel.id)
-#         settings["whitelisted_channels"] = wl; save_guild_settings(ctx.guild.id, settings)
-#         await ctx.send(f"❌ Removed {channel.mention} from auto-slowmode whitelist.")
-#     elif action == "list":
-#         if not wl: await ctx.send("Whitelist is empty.")
-#         else: await ctx.send("Whitelisted: " + ", ".join(f"<#{c}>" for c in wl))
-#     else:
-#         await ctx.send("Usage: /autoslow_channel add|remove|list #channel")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -769,33 +673,6 @@ async def bannedlink(ctx, action: str = None, *, link: str = None):
     else:
         await ctx.send("Usage: /bannedlink add|remove|list <link>")
 
-# @bot.command()
-# @commands.has_permissions(moderate_members=True)
-# async def timeout(ctx, member: discord.Member, duration: int, *, reason: str = "No reason provided"):
-#     """Timeout a member for a given number of seconds."""
-#     try:
-#         until = discord.utils.utcnow() + datetime.timedelta(seconds=duration)
-#         await member.edit(timed_out_until=until, reason=reason)
-#         await ctx.send(f"⏳ {member.mention} has been timed out for {duration} seconds. Reason: {reason}")
-#     except discord.Forbidden:
-#         await ctx.send("⚠️ I don't have permission to timeout this member.")
-#     except Exception as e:
-#         await ctx.send(f"⚠️ Failed to timeout: {e}")
-
-# @bot.command()
-# @commands.has_permissions(ban_members=True)
-# async def ban(ctx, member: discord.Member, *, reason: str = "No reason provided"):
-#     """Ban a member with an optional reason (max 200 chars)."""
-#     try:
-#         if len(reason) > 200:
-#             reason = reason[:200] + "..."
-#         await member.ban(reason=reason, delete_message_days=0)
-#         await ctx.send(f"🔨 {member.mention} has been banned. Reason: {reason}")
-#     except discord.Forbidden:
-#         await ctx.send("⚠️ I don't have permission to ban this member.")
-#     except Exception as e:
-#         await ctx.send(f"⚠️ Failed to ban: {e}")
-
 @bot.command()
 @commands.has_permissions(ban_members=True)
 async def unban(ctx, user_id: int):
@@ -874,9 +751,6 @@ async def antiraid(ctx, action: str = None):
         await ctx.send("Usage: /antiraid enable|disable|status")
 
 # === Run Flask ===
-# def run_flask():
-#     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
-
 def run_flask():
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
