@@ -88,7 +88,6 @@ def init_db():
         check_frequency INTEGER DEFAULT 10,
         time_configs TEXT,
         blacklisted_channels TEXT,
-        whitelisted_channels TEXT,
         moderation_enabled INTEGER DEFAULT 1,
         bad_words TEXT,
         banned_links TEXT,
@@ -110,7 +109,7 @@ def get_guild_settings(guild_id: int) -> dict:
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
     cur.execute("""SELECT autoslow_enabled, check_frequency, time_configs, blacklisted_channels, 
-                   whitelisted_channels, moderation_enabled, bad_words, banned_links, 
+                   moderation_enabled, bad_words, banned_links, 
                    caps_threshold, spam_window, spam_threshold,
                    antiraid_enabled, join_threshold, join_window, min_account_age_days
                    FROM guild_settings WHERE guild_id = ?""", (str(guild_id),))
@@ -122,7 +121,6 @@ def get_guild_settings(guild_id: int) -> dict:
             "check_frequency": DEFAULT_CHECK_FREQUENCY,
             "time_configs": DEFAULT_TIME_CONFIGS.copy(),
             "blacklisted_channels": [],
-            "whitelisted_channels": [],
             "moderation_enabled": True,
             "bad_words": DEFAULT_BAD_WORDS.copy(),
             "banned_links": DEFAULT_BANNED_LINKS.copy(),
@@ -135,7 +133,7 @@ def get_guild_settings(guild_id: int) -> dict:
             "min_account_age_days": DEFAULT_ACCOUNT_AGE_DAYS
         }
 
-    (autoslow_enabled, check_frequency, time_configs_json, blacklisted_json, whitelisted_json,
+    (autoslow_enabled, check_frequency, time_configs_json, blacklisted_json,
      moderation_enabled, bad_words_json, banned_links_json, caps_threshold, spam_window, spam_threshold,
      antiraid_enabled, join_threshold, join_window, min_account_age_days) = row
 
@@ -150,7 +148,6 @@ def get_guild_settings(guild_id: int) -> dict:
         "check_frequency": int(check_frequency or DEFAULT_CHECK_FREQUENCY),
         "time_configs": _parse(time_configs_json, DEFAULT_TIME_CONFIGS.copy()),
         "blacklisted_channels": _parse(blacklisted_json, []),
-        "whitelisted_channels": _parse(whitelisted_json, []),
         "moderation_enabled": bool(moderation_enabled),
         "bad_words": _parse(bad_words_json, DEFAULT_BAD_WORDS.copy()),
         "banned_links": _parse(banned_links_json, DEFAULT_BANNED_LINKS.copy()),
@@ -169,7 +166,7 @@ def save_guild_settings(guild_id: int, settings: dict):
     cur.execute("""
     INSERT OR REPLACE INTO guild_settings (
         guild_id, autoslow_enabled, check_frequency, time_configs, blacklisted_channels, 
-        whitelisted_channels, moderation_enabled, bad_words, banned_links, caps_threshold, 
+        moderation_enabled, bad_words, banned_links, caps_threshold, 
         spam_window, spam_threshold, antiraid_enabled, join_threshold, join_window, min_account_age_days
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
@@ -178,7 +175,6 @@ def save_guild_settings(guild_id: int, settings: dict):
         int(settings.get("check_frequency", DEFAULT_CHECK_FREQUENCY)),
         json.dumps(settings.get("time_configs", DEFAULT_TIME_CONFIGS)),
         json.dumps(settings.get("blacklisted_channels", [])),
-        json.dumps(settings.get("whitelisted_channels", [])),
         1 if settings.get("moderation_enabled", True) else 0,
         json.dumps(settings.get("bad_words", DEFAULT_BAD_WORDS)),
         json.dumps(settings.get("banned_links", DEFAULT_BANNED_LINKS)),
@@ -325,10 +321,7 @@ async def update_slowmode_batched():
         settings = get_guild_settings(guild_id)
         if not settings.get("autoslow_enabled", True):
             continue
-        wl = settings.get("whitelisted_channels", [])
         bl = settings.get("blacklisted_channels", [])
-        if wl and channel_id not in wl:
-            continue
         if channel_id in bl:
             continue
         configs = settings.get("time_configs", DEFAULT_TIME_CONFIGS)
@@ -401,12 +394,10 @@ async def on_message(message):
             return
     if guild_settings and guild_settings.get("autoslow_enabled", True):
         ch_id = message.channel.id
-        wl = guild_settings.get("whitelisted_channels", [])
         bl = guild_settings.get("blacklisted_channels", [])
-        if wl and ch_id not in wl:
-            await bot.process_commands(message); return
         if ch_id in bl:
-            await bot.process_commands(message); return
+            await bot.process_commands(message)
+            return
         message_cache[ch_id] = message_cache.get(ch_id, 0) + 1
         if time.time() >= last_updated + guild_settings.get("check_frequency", DEFAULT_CHECK_FREQUENCY):
             bot.loop.create_task(update_slowmode_batched())
@@ -432,8 +423,8 @@ async def bot_help(ctx):
         "/unlock — Remove slowmode on all text channels\n\n"
 
         "**Auto-slowmode (Administrator)**\n"
-        "/autoslow enable|disable|status (Currently applying to all channels)\n"
-        "/autoslow_blacklist add|remove|list #channel (Broken)\n"
+        "/autoslow enable|disable|status (Applies to all channels except blacklisted)\n"
+        "/autoslow_blacklist add|remove|list #channel (Unable to test)\n"
         "/set_slowmode_thresholds 50:30,20:15,10:5,0:0 — /set_slowmode_thresholds 10:5 -> every 10 messages = 5s slowmode (Testing)\n"
         "/set_check_frequency <seconds> — check how frequently for /set_slowmode_thresholds (Testing)\n\n"
         "**Moderation (Administrator)**\n"
