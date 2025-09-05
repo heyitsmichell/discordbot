@@ -1,5 +1,6 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
+from discord.utils import escape_markdown
 import logging
 from dotenv import load_dotenv
 import os
@@ -13,9 +14,6 @@ from collections import defaultdict
 from collections import deque
 import asyncio
 import json
-# Testing
-from discord.ext import tasks
-
 
 # retrieve information from .env file
 load_dotenv()
@@ -419,6 +417,11 @@ async def bot_help(ctx):
         "/linkyoutube — Get OAuth link in DM\n"
         "/youtube <member> — Show linked YouTube\n"
         "/unlinkyoutube — Unlink YouTube\n\n"
+
+        "**Lookup (Administrator)**\n"
+        "/twitchusers — List all users with linked Twitch account\n"
+        "/youtubeusers — List all users with linked YouTube account\n\n"
+
         "**Lockdown / Slowmode (Administrator)**\n"
         "/lock1 — Set 15s slowmode on all text channels\n"
         "/lock2 — Set 30s slowmode on all text channels\n"
@@ -430,6 +433,7 @@ async def bot_help(ctx):
         "/autoslow_blacklist add|remove|list #channel (Unable to test)\n"
         "/set_slowmode_thresholds 50:30,20:15,10:5,0:0 — /set_slowmode_thresholds 10:5 -> every 10 messages = 5s slowmode (Testing)\n"
         "/set_check_frequency <seconds> — check how frequently for /set_slowmode_thresholds (Testing)\n\n"
+
         "**Moderation (Administrator)**\n"
         "/moderation enable|disable\n"
         "/badword add|remove|list <word>\n"
@@ -747,7 +751,7 @@ async def antiraid(ctx, action: str = None):
     from discord.ext import tasks
 
 # === Background Tasks Testing ===
-@tasks.loop(minutes=30)
+@tasks.loop(minutes=60)
 async def heartbeat_message():
     await bot.wait_until_ready()
     for guild in bot.guilds:
@@ -767,6 +771,117 @@ async def on_ready():
     logging.info(f"✅ {bot.user.name} is ready!")
     if not heartbeat_message.is_running():
         heartbeat_message.start()
+
+# === Pagination ===
+async def send_paginated_embed(ctx, title: str, entries: list, per_page: int = 10):
+    """Send a paginated embed with reaction controls."""
+    if not entries:
+        await ctx.send(f"⚠️ No users found for {title}.")
+        return
+
+    # Split into pages
+    pages = [entries[i:i + per_page] for i in range(0, len(entries), per_page)]
+    total_pages = len(pages)
+    current_page = 0
+
+    def make_embed(page_index: int):
+        embed = discord.Embed(
+            title=title,
+            description="\n".join(pages[page_index]),
+            color=discord.Color.purple()
+        )
+        embed.set_footer(text=f"Page {page_index + 1}/{total_pages}")
+        return embed
+
+    message = await ctx.send(embed=make_embed(current_page))
+
+    if total_pages == 1:
+        return
+
+    # Add reaction controls
+    controls = ["⏮️", "◀️", "▶️", "⏭️"]
+    for c in controls:
+        await message.add_reaction(c)
+
+    def check(reaction, user):
+        return (
+            user == ctx.author
+            and str(reaction.emoji) in controls
+            and reaction.message.id == message.id
+        )
+
+    while True:
+        try:
+            reaction, user = await bot.wait_for("reaction_add", timeout=60.0, check=check)
+            emoji = str(reaction.emoji)
+
+            if emoji == "⏮️":
+                current_page = 0
+            elif emoji == "◀️":
+                current_page = (current_page - 1) % total_pages
+            elif emoji == "▶️":
+                current_page = (current_page + 1) % total_pages
+            elif emoji == "⏭️":
+                current_page = total_pages - 1
+
+            await message.edit(embed=make_embed(current_page))
+            await message.remove_reaction(reaction, user)
+        except asyncio.TimeoutError:
+            try:
+                await message.clear_reactions()
+            except Exception:
+                pass
+            break
+
+def format_username(member, discord_id: int):
+    if member:
+        if member.discriminator != "0":  # legacy account
+            name = f"{member.name}#{member.discriminator}"
+        else:  # new account
+            name = member.name
+        return f"{name} (<@{discord_id}>)"
+    else:
+        return f"(Left the server) {discord_id}"
+
+@bot.command(name="twitchusers")
+async def twitchusers(ctx):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute("SELECT discord_id, twitch_username FROM users WHERE twitch_username IS NOT NULL")
+    rows = cur.fetchall()
+    conn.close()
+
+    entries = []
+    for discord_id, twitch_username in rows:
+        member = ctx.guild.get_member(int(discord_id))
+        display_name = format_username(member, discord_id)
+        twitch_url = f"https://twitch.tv/{twitch_username}"
+        entries.append((display_name.lower(), f"**{display_name}** — [{twitch_username}]({twitch_url})"))
+
+    entries.sort(key=lambda x: x[0])
+    formatted_entries = [entry[1] for entry in entries]
+
+    await send_paginated_embed(ctx, "Users — Twitch", formatted_entries)
+
+@bot.command(name="youtubeusers")
+async def youtubeusers(ctx):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute("SELECT discord_id, youtube_channel FROM users WHERE youtube_channel IS NOT NULL")
+    rows = cur.fetchall()
+    conn.close()
+
+    entries = []
+    for discord_id, youtube_channel in rows:
+        member = ctx.guild.get_member(int(discord_id))
+        display_name = format_username(member, discord_id)
+        safe_channel = escape_markdown(str(youtube_channel))
+        entries.append((display_name.lower(), f"**{display_name}** — {safe_channel}"))
+
+    entries.sort(key=lambda x: x[0])
+    formatted_entries = [entry[1] for entry in entries]
+
+    await send_paginated_embed(ctx, "Users — YouTube", formatted_entries)
 
 # === Run Flask ===
 def run_flask():
