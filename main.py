@@ -751,7 +751,7 @@ async def antiraid(ctx, action: str = None):
     from discord.ext import tasks
 
 # === Background Tasks Testing ===
-@tasks.loop(minutes=60)
+@tasks.loop(minutes=45)
 async def heartbeat_message():
     await bot.wait_until_ready()
     for guild in bot.guilds:
