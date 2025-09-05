@@ -13,6 +13,9 @@ from collections import defaultdict
 from collections import deque
 import asyncio
 import json
+# Testing
+from discord.ext import tasks
+
 
 # retrieve information from .env file
 load_dotenv()
@@ -350,9 +353,9 @@ async def update_slowmode_batched():
     last_updated = time.time()
 
 # === BOT EVENTS ===
-@bot.event
-async def on_ready():
-    logging.info(f"✅ Bot is ready: {bot.user.name}")
+# @bot.event
+# async def on_ready():
+#     logging.info(f"✅ Bot is ready: {bot.user.name}")
 
 @bot.event
 async def on_message(message):
@@ -740,6 +743,30 @@ async def antiraid(ctx, action: str = None):
         await ctx.send(f"ℹ️ Anti-raid mode is currently {state}.")
     else:
         await ctx.send("Usage: /antiraid enable|disable|status")
+
+    from discord.ext import tasks
+
+# === Background Tasks Testing ===
+@tasks.loop(minutes=30)
+async def heartbeat_message():
+    await bot.wait_until_ready()
+    for guild in bot.guilds:
+        if guild.system_channel:
+            try:
+                await guild.system_channel.send("I am awake")
+            except Exception:
+                pass
+
+@heartbeat_message.before_loop
+async def before_heartbeat():
+    await bot.wait_until_ready()
+
+# === New Bot Events Testing ===
+@bot.event
+async def on_ready():
+    logging.info(f"✅ {bot.user.name} is ready!")
+    if not heartbeat_message.is_running():
+        heartbeat_message.start()
 
 # === Run Flask ===
 def run_flask():
