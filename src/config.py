@@ -1,0 +1,43 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Discord Config
+TOKEN = os.getenv('DISCORD_TOKEN')
+CLIENT_ID = os.getenv('DISCORD_CLIENT_ID')
+CLIENT_SECRET = os.getenv('DISCORD_CLIENT_SECRET')
+REDIRECT_URI = os.getenv('DISCORD_REDIRECT_URI')
+
+# Twitch Config
+TWITCH_CLIENT_ID = os.getenv('TWITCH_CLIENT_ID')
+TWITCH_CLIENT_SECRET = os.getenv('TWITCH_CLIENT_SECRET')
+TWITCH_EVENTSUB_SECRET = os.getenv('TWITCH_EVENTSUB_SECRET', 'supersecret')
+TWITCH_CALLBACK_URL = os.getenv('TWITCH_CALLBACK_URL')
+TWITCH_STREAMER_REDIRECT_URI = os.getenv('TWITCH_STREAMER_REDIRECT_URI')
+
+# Database
+DB_FILE = os.getenv('DB_PATH', 'bot.db')
+
+# Default Settings
+DEFAULT_BAD_WORDS = ["fuck", "shit", "bitch"]
+DEFAULT_BANNED_LINKS = ["discord.gg"]
+DEFAULT_CAPS_THRESHOLD = 0.7
+DEFAULT_SPAM_WINDOW = 5
+DEFAULT_SPAM_THRESHOLD = 5
+LOG_CHANNEL_ID = None
+
+# Anti-Raid Settings
+DEFAULT_ACCOUNT_AGE_DAYS = 7
+DEFAULT_JOIN_THRESHOLD = 5
+DEFAULT_JOIN_WINDOW = 30
+
+# Auto-slowmode Settings
+DEFAULT_TIME_CONFIGS = {
+    50: 30,
+    20: 15,
+    10: 5,
+    0: 0
+}
+DEFAULT_CHECK_FREQUENCY = 30
+SLOWMODE_EDIT_DELAY = 0.6

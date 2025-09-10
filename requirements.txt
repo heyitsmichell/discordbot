@@ -1,4 +1,6 @@
 discord.py
-python-dotenv
+aiohttp
 flask
+python-dotenv
+sqlite3
 requests
