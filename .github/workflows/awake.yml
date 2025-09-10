@@ -1,0 +1,15 @@
+
+name: awake
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Ping bot
+      run: |
+        curl -f ${{ secrets.RENDER_APP_URL }} || echo "Ping completed"
