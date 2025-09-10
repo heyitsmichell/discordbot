@@ -4,6 +4,7 @@ import threading
 import requests
 import sqlite3
 import json
+import os
 import config
 from utils.twitch_utils import enqueue_ban_job, verify_twitch_signature
 
@@ -197,7 +198,7 @@ def twitch_events():
 
 def start_flask_server():
     """Start Flask server in a separate thread."""
-    port = int(config.FLASK_PORT) if hasattr(config, 'FLASK_PORT') else 5000
+    port = int(os.environ.get("PORT", getattr(config, "FLASK_PORT", 5000)))
     
     def run_flask():
         app.run(host="0.0.0.0", port=port)
