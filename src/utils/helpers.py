@@ -10,3 +10,4 @@ async def log_to_channel(bot, message):
                 await channel.send(message)
         except Exception:
             pass
+

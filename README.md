@@ -241,4 +241,3 @@ The bot logs to `discord.log` with INFO level by default. Check this file for de
 ## License
 
 MIT License
-Copyright (c) 2025 Michell

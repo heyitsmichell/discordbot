@@ -1,9 +1,9 @@
 import discord
 from discord.ext import commands
+from discord.ui import View, Button
 import sqlite3
 from urllib.parse import quote_plus
 import config
-
 class YouTube(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -13,9 +13,9 @@ class YouTube(commands.Cog):
         """Link YouTube account."""
         if not config.CLIENT_ID or not config.REDIRECT_URI or str(config.REDIRECT_URI).strip().lower() in {"none", "null", ""}:
             try:
-                await ctx.author.send("OAuth not configured.")
+                await ctx.author.send("⚠️ OAuth not configured.")
             except Exception:
-                await ctx.send("OAuth not configured.")
+                await ctx.send("⚠️ OAuth not configured.")
             return
         
         encoded_redirect = quote_plus(config.REDIRECT_URI)
@@ -28,11 +28,14 @@ class YouTube(commands.Cog):
             f"&state=youtube"
         )
         
+        view = View()
+        view.add_item(Button(label="Link YouTube", url=url))
+        
         try:
-            await ctx.author.send(f"Click here to link your YouTube: {url}")
+            await ctx.author.send("🔗 Click below to link your YouTube account:", view=view)
             await ctx.send(f"{ctx.author.mention}, check your DMs to link YouTube!")
         except discord.Forbidden:
-            await ctx.send("Couldn't DM you. Enable DMs.")
+            await ctx.send("❌ Couldn't DM you. Please enable DMs to receive the link.")
     
     @commands.command()
     async def youtube(self, ctx, member: discord.Member = None):
