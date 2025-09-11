@@ -4,8 +4,16 @@ import time
 import asyncio
 from database import get_guild_settings, save_guild_settings
 from utils.helpers import log_to_channel
+from dotenv import load_dotenv
 import config
 
+load_dotenv()
+
+def role_check(*role_ids):
+    """Check if user has any of the specified roles."""
+    def predicate(ctx):
+        return any(role.id in role_ids for role in ctx.author.roles)
+    return commands.check(predicate)
 class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -67,7 +75,7 @@ class Moderation(commands.Cog):
                 return
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def moderation(self, ctx, action: str = None):
         """Enable or disable moderation."""
         settings = get_guild_settings(ctx.guild.id)
@@ -83,7 +91,7 @@ class Moderation(commands.Cog):
             await ctx.send("Usage: /moderation enable|disable")
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def badword(self, ctx, action: str = None, *, word: str = None):
         """Manage bad words list."""
         settings = get_guild_settings(ctx.guild.id)
@@ -107,7 +115,7 @@ class Moderation(commands.Cog):
             await ctx.send("Usage: /badword add|remove|list <word>")
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def bannedlink(self, ctx, action: str = None, *, link: str = None):
         """Manage banned links list."""
         settings = get_guild_settings(ctx.guild.id)

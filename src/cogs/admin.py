@@ -1,9 +1,18 @@
 import discord
 from discord.ext import commands
 from discord.utils import escape_markdown
+from dotenv import load_dotenv
 import sqlite3
 import asyncio
 import config
+
+load_dotenv()
+
+def role_check(*role_ids):
+    """Check if user has any of the specified roles."""
+    def predicate(ctx):
+        return any(role.id in role_ids for role in ctx.author.roles)
+    return commands.check(predicate)
 
 class Admin(commands.Cog):
     def __init__(self, bot):
@@ -85,7 +94,7 @@ class Admin(commands.Cog):
             return f"(Left the server) {discord_id}"
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def twitchusers(self, ctx):
         """List all users with linked Twitch accounts."""
         conn = sqlite3.connect(config.DB_FILE, timeout=10)
@@ -107,7 +116,7 @@ class Admin(commands.Cog):
         await self.send_paginated_embed(ctx, "Users — Twitch", formatted_entries)
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def youtubeusers(self, ctx):
         """List all users with linked YouTube accounts."""
         conn = sqlite3.connect(config.DB_FILE, timeout=10)
@@ -129,28 +138,29 @@ class Admin(commands.Cog):
         await self.send_paginated_embed(ctx, "Users — YouTube", formatted_entries)
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def setlogchannel(self, ctx, channel: discord.TextChannel):
         """Set the global log channel."""
         config.LOG_CHANNEL_ID = channel.id
-        await ctx.send(f"✅ Log channel set to {channel.mention} (in-memory)")
+        await ctx.send(f"✅ Log channel set to {channel.mention}")
     
     @commands.command()
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def getlogchannel(self, ctx):
         """Get the current log channel."""
         if config.LOG_CHANNEL_ID:
             channel = ctx.guild.get_channel(config.LOG_CHANNEL_ID)
             if channel:
-                await ctx.send(f"📌 Current log channel is {channel.mention} (in-memory)")
+                await ctx.send(f"📌 Current log channel is {channel.mention}")
                 return
-        await ctx.send("⚠️ No global log channel configured (in-memory).")
+        await ctx.send("⚠️ No global log channel configured.")
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def resetlogchannel(self, ctx):
         """Reset the log channel configuration."""
         config.LOG_CHANNEL_ID = None
-        await ctx.send("✅ Global log channel has been reset (in-memory).")
+        await ctx.send("✅ Global log channel has been reset.")
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))

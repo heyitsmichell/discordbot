@@ -2,10 +2,19 @@ import discord
 from discord.ext import commands
 import time
 import datetime
+from dotenv import load_dotenv
 from collections import defaultdict, deque
 from database import get_guild_settings, save_guild_settings
 from utils.helpers import log_to_channel
 import config
+
+load_dotenv()
+
+def role_check(*role_ids):
+    """Check if user has any of the specified roles."""
+    def predicate(ctx):
+        return any(role.id in role_ids for role in ctx.author.roles)
+    return commands.check(predicate)
 
 class AntiRaid(commands.Cog):
     def __init__(self, bot):
@@ -55,7 +64,7 @@ class AntiRaid(commands.Cog):
             await log_to_channel(self.bot, "⏱️ Auto-lockdown applied (30s slowmode).")
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def antiraid(self, ctx, action: str = None):
         """Toggle anti-raid mode."""
         settings = get_guild_settings(ctx.guild.id)

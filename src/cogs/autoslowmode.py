@@ -2,9 +2,18 @@ import discord
 from discord.ext import commands
 import time
 import asyncio
+from dotenv import load_dotenv
 from database import get_guild_settings, save_guild_settings
 from utils.helpers import log_to_channel
 import config
+
+load_dotenv()
+
+def role_check(*role_ids):
+    """Check if user has any of the specified roles."""
+    def predicate(ctx):
+        return any(role.id in role_ids for role in ctx.author.roles)
+    return commands.check(predicate)
 
 class AutoSlowmode(commands.Cog):
     def __init__(self, bot):
@@ -36,7 +45,7 @@ class AutoSlowmode(commands.Cog):
                     self.bot.loop.create_task(self.update_slowmode_batched())
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def autoslow(self, ctx, action: str = None):
         """Enable, disable, or check status of auto-slowmode."""
         settings = get_guild_settings(ctx.guild.id)
@@ -54,7 +63,7 @@ class AutoSlowmode(commands.Cog):
             await ctx.send("Usage: /autoslow enable|disable|status")
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def autoslow_blacklist(self, ctx, action: str = None, channel: discord.TextChannel = None):
         """Manage auto-slowmode blacklist."""
         settings = get_guild_settings(ctx.guild.id)
@@ -80,7 +89,7 @@ class AutoSlowmode(commands.Cog):
             await ctx.send("Usage: /autoslow_blacklist add|remove|list #channel")
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def set_slowmode_thresholds(self, ctx, *, thresholds: str):
         """Configure slowmode thresholds."""
         try:
@@ -97,7 +106,7 @@ class AutoSlowmode(commands.Cog):
             await ctx.send(f"Error parsing thresholds: {e}")
     
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def set_check_frequency(self, ctx, seconds: int):
         """Set check frequency for auto-slowmode."""
         settings = get_guild_settings(ctx.guild.id)

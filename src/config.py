@@ -8,6 +8,8 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 CLIENT_ID = os.getenv('DISCORD_CLIENT_ID')
 CLIENT_SECRET = os.getenv('DISCORD_CLIENT_SECRET')
 REDIRECT_URI = os.getenv('DISCORD_REDIRECT_URI')
+ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID"))
+MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID"))
 
 # Twitch Config
 TWITCH_CLIENT_ID = os.getenv('TWITCH_CLIENT_ID')

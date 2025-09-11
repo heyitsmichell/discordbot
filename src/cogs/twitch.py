@@ -5,6 +5,7 @@ import sqlite3
 import aiohttp
 import asyncio
 import re
+from dotenv import load_dotenv
 from urllib.parse import quote_plus
 from database import get_guild_settings
 from utils.helpers import log_to_channel
@@ -15,6 +16,14 @@ from utils.twitch_utils import (
     ban_queue
 )
 import config
+
+load_dotenv()
+
+def role_check(*role_ids):
+    """Check if user has any of the specified roles."""
+    def predicate(ctx):
+        return any(role.id in role_ids for role in ctx.author.roles)
+    return commands.check(predicate)
 
 class Twitch(commands.Cog):
     def __init__(self, bot):
@@ -101,6 +110,7 @@ class Twitch(commands.Cog):
             await ctx.send("❌ Couldn't DM you. Please enable DMs to receive the link.")
     
     @commands.command()
+    @commands.has_permissions(administrator=True)
     async def linktwitchstreamer(self, ctx):
         """Link Twitch streamer account with OAuth."""
         client_id = config.TWITCH_CLIENT_ID
@@ -232,6 +242,7 @@ class Twitch(commands.Cog):
             print(f"DB error in unlink_twitch_streamer: {e}")
     
     @commands.command()
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def gettwid(self, ctx, twitch_username: str):
         """Lookup Twitch numeric ID."""
         token = await get_twitch_app_token()
@@ -336,6 +347,7 @@ class Twitch(commands.Cog):
             await ctx.send("\n".join(results))
     
     @commands.command()
+    @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def listsubs(self, ctx):
         """List active EventSub subscriptions."""
         token = await get_twitch_app_token()
