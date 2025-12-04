@@ -22,7 +22,7 @@ TWITCH_STREAMER_REDIRECT_URI = os.getenv('TWITCH_STREAMER_REDIRECT_URI')
 DB_FILE = os.getenv('DB_PATH', 'bot.db')
 
 # Default Settings
-DEFAULT_BAD_WORDS = ["fuck", "shit", "bitch"]
+DEFAULT_BAD_WORDS = []
 DEFAULT_BANNED_LINKS = ["discord.gg"]
 DEFAULT_CAPS_THRESHOLD = 0.7
 DEFAULT_SPAM_WINDOW = 5

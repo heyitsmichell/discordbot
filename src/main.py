@@ -35,6 +35,7 @@ async def load_extensions():
         'cogs.youtube',
         'cogs.lockdown',
         'cogs.admin'
+        # 'cogs.autoban'
     ]
     
     for cog in cogs_list:
@@ -117,7 +118,6 @@ async def main():
     async with bot:
         init_db()
         ensure_users_has_twitch_id()
-        # Start Flask server in separate thread
         start_flask_server()
         await load_extensions()
         await bot.start(config.TOKEN)
