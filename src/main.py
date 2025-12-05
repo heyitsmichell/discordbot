@@ -35,7 +35,8 @@ async def load_extensions():
         'cogs.youtube',
         'cogs.lockdown',
         'cogs.admin',
-        'cogs.timezone'
+        'cogs.timezone',
+        'cogs.fun'
         # 'cogs.autoban'
     ]
     
