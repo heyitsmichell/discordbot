@@ -3,3 +3,7 @@ aiohttp
 flask
 python-dotenv
 requests
+supabase
+geopy
+timezonefinder
+pytz

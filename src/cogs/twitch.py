@@ -1,13 +1,21 @@
 import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
-import sqlite3
 import aiohttp
 import asyncio
 import re
 from dotenv import load_dotenv
 from urllib.parse import quote_plus
-from database import get_guild_settings
+from database import (
+    get_guild_settings,
+    get_user,
+    get_all_twitch_ids,
+    update_twitch_username_by_id,
+    clear_user_twitch,
+    get_streamer_by_twitch_id,
+    delete_streamer_by_twitch_id,
+    delete_streamer_by_discord_id
+)
 from utils.helpers import log_to_channel
 from utils.twitch_utils import (
     get_twitch_app_token, 
@@ -36,12 +44,7 @@ class Twitch(commands.Cog):
     @tasks.loop(hours=6)
     async def sync_twitch_usernames(self):
         """Sync stored twitch_id -> twitch_username for all users."""
-        conn = sqlite3.connect(config.DB_FILE, timeout=10)
-        cur = conn.cursor()
-        cur.execute("SELECT DISTINCT twitch_id FROM users WHERE twitch_id IS NOT NULL AND twitch_id != ''")
-        rows = cur.fetchall()
-        conn.close()
-        ids = [r[0] for r in rows if r and r[0]]
+        ids = get_all_twitch_ids()
         
         if not ids:
             return
@@ -66,14 +69,10 @@ class Twitch(commands.Cog):
                 if not tid or not login:
                     continue
                 try:
-                    conn = sqlite3.connect(config.DB_FILE, timeout=10)
-                    cur = conn.cursor()
-                    cur.execute("UPDATE users SET twitch_username = ? WHERE twitch_id = ?", (login, tid))
-                    if conn.total_changes > 0:
+                    updated = update_twitch_username_by_id(tid, login)
+                    if updated:
                         print(f"Updated username for twitch_id {tid} -> {login}")
                         await log_to_channel(self.bot, f"[sync] Updated Twitch username for twitch_id {tid} -> {login}")
-                    conn.commit()
-                    conn.close()
                 except Exception as e:
                     print("DB error during twitch sync:", e)
     
@@ -149,13 +148,10 @@ class Twitch(commands.Cog):
     async def twitch(self, ctx, member: discord.Member = None):
         """Show linked Twitch account for a member."""
         member = member or ctx.author
-        conn = sqlite3.connect(config.DB_FILE, timeout=10)
-        cur = conn.cursor()
-        cur.execute("SELECT twitch_username FROM users WHERE discord_id = ?", (str(member.id),))
-        row = cur.fetchone()
-        conn.close()
-        if row and row[0]:
-            await ctx.send(f"{member.display_name}'s Twitch: **{row[0]}**")
+        user = get_user(str(member.id))
+        
+        if user and user.get("twitch_username"):
+            await ctx.send(f"{member.display_name}'s Twitch: **{user['twitch_username']}**")
         else:
             await ctx.send(f"{member.display_name} has not linked a Twitch account.")
     
@@ -163,14 +159,12 @@ class Twitch(commands.Cog):
     async def unlinktwitch(self, ctx):
         """Unlink your Twitch account."""
         try:
-            conn = sqlite3.connect(config.DB_FILE, timeout=10)
-            cur = conn.cursor()
-            cur.execute("UPDATE users SET twitch_username=NULL, twitch_id=NULL WHERE discord_id=?", (str(ctx.author.id),))
-            changes = conn.total_changes
-            conn.commit()
-            conn.close()
+            user = get_user(str(ctx.author.id))
+            had_twitch = user and user.get("twitch_username")
             
-            if changes > 0:
+            clear_user_twitch(str(ctx.author.id))
+            
+            if had_twitch:
                 msg = f"✅ {ctx.author.mention}, your Twitch account has been unlinked."
                 await ctx.send(msg)
                 await log_to_channel(self.bot, f"[unlinktwitch] {ctx.author} ({ctx.author.id}) — unlinked their Twitch account.")
@@ -197,17 +191,12 @@ class Twitch(commands.Cog):
             identifier = m.group(1)
         
         try:
-            conn = sqlite3.connect(config.DB_FILE, timeout=10)
-            cur = conn.cursor()
-            
-            cur.execute("SELECT discord_id FROM streamers WHERE twitch_id = ?", (identifier,))
-            row = cur.fetchone()
-            if row:
-                discord_id = row[0]
-                cur.execute("DELETE FROM streamers WHERE twitch_id = ?", (identifier,))
-                cur.execute("UPDATE users SET twitch_username = NULL, twitch_id = NULL WHERE discord_id = ?", (str(discord_id),))
-                conn.commit()
-                conn.close()
+            # Try to find by Twitch ID first
+            streamer = get_streamer_by_twitch_id(identifier)
+            if streamer:
+                discord_id = streamer["discord_id"]
+                delete_streamer_by_twitch_id(identifier)
+                clear_user_twitch(str(discord_id))
                 
                 msg = (f"✅ {ctx.author.mention} unlinked streamer with Twitch ID `{identifier}` "
                        f"and cleared linked Twitch for Discord ID `{discord_id}`.")
@@ -215,14 +204,10 @@ class Twitch(commands.Cog):
                 await log_to_channel(self.bot, f"[unlinktwitchstreamer] {ctx.author} ({ctx.author.id}) — {msg}")
                 return
             
-            cur.execute("SELECT twitch_id FROM streamers WHERE discord_id = ?", (str(identifier),))
-            row2 = cur.fetchone()
-            if row2:
-                twitch_id = row2[0]
-                cur.execute("DELETE FROM streamers WHERE discord_id = ?", (str(identifier),))
-                cur.execute("UPDATE users SET twitch_username = NULL, twitch_id = NULL WHERE discord_id = ?", (str(identifier),))
-                conn.commit()
-                conn.close()
+            # Try by Discord ID
+            twitch_id = delete_streamer_by_discord_id(str(identifier))
+            if twitch_id:
+                clear_user_twitch(str(identifier))
                 
                 msg = (f"✅ {ctx.author.mention} unlinked streamer for Discord ID `{identifier}` "
                        f"(Twitch ID: `{twitch_id}`) and cleared linked Twitch username.")
@@ -230,7 +215,6 @@ class Twitch(commands.Cog):
                 await log_to_channel(self.bot, f"[unlinktwitchstreamer] {ctx.author} ({ctx.author.id}) — {msg}")
                 return
             
-            conn.close()
             info_msg = f"ℹ️ No streamer found with Twitch ID or Discord ID/mention `{identifier}`."
             await ctx.send(info_msg)
             await log_to_channel(self.bot, f"[unlinktwitchstreamer] {ctx.author} ({ctx.author.id}) — attempted unlink for `{identifier}`: not found")

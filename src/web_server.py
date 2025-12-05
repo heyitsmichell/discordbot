@@ -2,10 +2,9 @@
 from flask import Flask, request
 import threading
 import requests
-import sqlite3
-import json
 import os
 import config
+from database import upsert_user, upsert_streamer
 from utils.twitch_utils import enqueue_ban_job, verify_twitch_signature
 
 app = Flask(__name__)
@@ -19,7 +18,7 @@ def callback():
     """Discord OAuth callback for linking Twitch/YouTube accounts."""
     try:
         code = request.args.get("code")
-        state = request.args.get("state")  # identify twitch vs youtube
+        state = request.args.get("state")
         if not code:
             return "No code provided", 400
 
@@ -55,18 +54,8 @@ def callback():
             elif c.get("type") == "youtube" and state == "youtube":
                 youtube_name = c.get("name")
 
-        sql_conn = sqlite3.connect(config.DB_FILE, timeout=10)
-        cur = sql_conn.cursor()
-        cur.execute("""
-            INSERT OR REPLACE INTO users (discord_id, twitch_username, youtube_channel)
-            VALUES (
-                ?,
-                COALESCE(?, (SELECT twitch_username FROM users WHERE discord_id=?)),
-                COALESCE(?, (SELECT youtube_channel FROM users WHERE discord_id=?))
-            )
-        """, (discord_id, twitch_name, discord_id, youtube_name, discord_id))
-        sql_conn.commit()
-        sql_conn.close()
+        # Upsert user with Supabase
+        upsert_user(discord_id, twitch_username=twitch_name, youtube_channel=youtube_name)
 
         if state == "youtube":
             return f"✅ Linked successfully! YouTube: {youtube_name}"
@@ -124,40 +113,11 @@ def twitch_streamer_callback():
         twitch_id = user["id"]
         twitch_login = user["login"]
 
-        conn = sqlite3.connect(config.DB_FILE, timeout=10)
-        cur = conn.cursor()
-
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS streamers (
-                discord_id TEXT PRIMARY KEY,
-                twitch_id TEXT,
-                twitch_username TEXT,
-                access_token TEXT,
-                refresh_token TEXT
-            )
-        """)
-
-        cur.execute("""
-            INSERT OR REPLACE INTO streamers (discord_id, twitch_id, twitch_username, access_token, refresh_token)
-            VALUES (?, ?, ?, ?, ?)
-        """, (str(state), twitch_id, twitch_login, access_token, refresh_token))
+        # Upsert streamer with Supabase
+        upsert_streamer(str(state), twitch_id, twitch_login, access_token, refresh_token)
 
         # Also update users table
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                discord_id TEXT PRIMARY KEY,
-                twitch_username TEXT,
-                youtube_channel TEXT,
-                twitch_id TEXT
-            )
-        """)
-        cur.execute("""
-            INSERT OR REPLACE INTO users (discord_id, twitch_username)
-            VALUES (?, ?)
-        """, (str(state), twitch_login))
-
-        conn.commit()
-        conn.close()
+        upsert_user(str(state), twitch_username=twitch_login)
 
         return f"✅ Successfully linked Twitch streamer account <b>{twitch_login}</b> (ID: {twitch_id}). You can close this page."
 

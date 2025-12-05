@@ -2,9 +2,9 @@ import discord
 from discord.ext import commands
 from discord.utils import escape_markdown
 from dotenv import load_dotenv
-import sqlite3
 import asyncio
 import config
+from database import get_all_users_with_twitch, get_all_users_with_youtube
 
 load_dotenv()
 
@@ -97,14 +97,14 @@ class Admin(commands.Cog):
     @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def twitchusers(self, ctx):
         """List all users with linked Twitch accounts."""
-        conn = sqlite3.connect(config.DB_FILE, timeout=10)
-        cur = conn.cursor()
-        cur.execute("SELECT discord_id, twitch_username FROM users WHERE twitch_username IS NOT NULL")
-        rows = cur.fetchall()
-        conn.close()
+        rows = get_all_users_with_twitch()
         
         entries = []
-        for discord_id, twitch_username in rows:
+        for row in rows:
+            discord_id = row.get("discord_id")
+            twitch_username = row.get("twitch_username")
+            if not discord_id or not twitch_username:
+                continue
             member = ctx.guild.get_member(int(discord_id))
             display_name = self.format_username(member, discord_id)
             twitch_url = f"https://twitch.tv/{twitch_username}"
@@ -119,14 +119,14 @@ class Admin(commands.Cog):
     @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
     async def youtubeusers(self, ctx):
         """List all users with linked YouTube accounts."""
-        conn = sqlite3.connect(config.DB_FILE, timeout=10)
-        cur = conn.cursor()
-        cur.execute("SELECT discord_id, youtube_channel FROM users WHERE youtube_channel IS NOT NULL")
-        rows = cur.fetchall()
-        conn.close()
+        rows = get_all_users_with_youtube()
         
         entries = []
-        for discord_id, youtube_channel in rows:
+        for row in rows:
+            discord_id = row.get("discord_id")
+            youtube_channel = row.get("youtube_channel")
+            if not discord_id or not youtube_channel:
+                continue
             member = ctx.guild.get_member(int(discord_id))
             display_name = self.format_username(member, discord_id)
             safe_channel = escape_markdown(str(youtube_channel))

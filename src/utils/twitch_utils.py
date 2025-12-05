@@ -1,12 +1,12 @@
 import asyncio
 import aiohttp
 import time
-import sqlite3
 import requests
 import discord
 import config
 import hmac
 import hashlib
+from database import get_discord_ids_by_twitch, get_streamer, update_streamer_tokens
 
 # Global variables
 ban_queue = asyncio.Queue()
@@ -44,7 +44,7 @@ async def handle_twitch_ban(bot, twitch_identifier: str):
     if not twitch_identifier:
         return
 
-    discord_ids = get_discord_ids_from_twitch(twitch_identifier)
+    discord_ids = get_discord_ids_by_twitch(twitch_identifier)
     if not discord_ids:
         print(f"ℹ️ No Discord account linked for Twitch identifier '{twitch_identifier}'")
         return
@@ -123,49 +123,6 @@ async def ban_worker(bot):
         await handle_twitch_ban(bot, twitch_user)
         ban_queue.task_done()
 
-def get_discord_ids_from_twitch(twitch_identifier: str):
-    """Get Discord IDs from Twitch identifier."""
-    if not twitch_identifier:
-        return []
-
-    conn = sqlite3.connect(config.DB_FILE, timeout=10)
-    cur = conn.cursor()
-
-    discord_ids = []
-    try:
-        if str(twitch_identifier).isdigit():
-            cur.execute("SELECT discord_id FROM streamers WHERE twitch_id = ?", (str(twitch_identifier),))
-            rows = cur.fetchall()
-            discord_ids.extend([r[0] for r in rows if r and r[0]])
-
-            cur.execute("SELECT discord_id FROM users WHERE twitch_id = ?", (str(twitch_identifier),))
-            rows = cur.fetchall()
-            discord_ids.extend([r[0] for r in rows if r and r[0]])
-    except Exception:
-        pass
-
-    if not discord_ids:
-        try:
-            cur.execute("SELECT discord_id FROM users WHERE LOWER(twitch_username) = ?", (str(twitch_identifier).lower(),))
-            rows = cur.fetchall()
-            discord_ids.extend([r[0] for r in rows if r and r[0]])
-            
-            cur.execute("SELECT discord_id FROM streamers WHERE LOWER(twitch_username) = ?", (str(twitch_identifier).lower(),))
-            rows = cur.fetchall()
-            discord_ids.extend([r[0] for r in rows if r and r[0]])
-        except Exception:
-            pass
-
-    conn.close()
-
-    seen = set()
-    uniques = []
-    for d in discord_ids:
-        if d not in seen:
-            seen.add(d)
-            uniques.append(d)
-    return uniques
-
 def enqueue_ban_job(twitch_identifier: str):
     """Add ban job to queue."""
     if not twitch_identifier:
@@ -238,14 +195,11 @@ def verify_twitch_signature(flask_request) -> bool:
 
 def refresh_streamer_token(discord_id: str):
     """Refresh streamer's OAuth token."""
-    conn = sqlite3.connect(config.DB_FILE, timeout=10)
-    cur = conn.cursor()
-    cur.execute("SELECT refresh_token FROM streamers WHERE discord_id = ?", (str(discord_id),))
-    row = cur.fetchone()
-    if not row or not row[0]:
-        conn.close()
+    streamer = get_streamer(str(discord_id))
+    if not streamer or not streamer.get("refresh_token"):
         return None
-    refresh_token = row[0]
+    
+    refresh_token = streamer["refresh_token"]
     resp = requests.post(
         "https://id.twitch.tv/oauth2/token",
         params={
@@ -257,13 +211,12 @@ def refresh_streamer_token(discord_id: str):
         timeout=10,
     )
     if resp.status_code != 200:
-        conn.close()
         return None
+    
     data = resp.json()
     new_access = data.get("access_token")
     new_refresh = data.get("refresh_token", refresh_token)
-    cur.execute("UPDATE streamers SET access_token = ?, refresh_token = ? WHERE discord_id = ?",
-                (new_access, new_refresh, str(discord_id)))
-    conn.commit()
-    conn.close()
+    
+    update_streamer_tokens(str(discord_id), new_access, new_refresh)
+    
     return new_access

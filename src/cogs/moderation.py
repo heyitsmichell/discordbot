@@ -27,7 +27,7 @@ class Moderation(commands.Cog):
         guild = message.guild
         guild_settings = get_guild_settings(guild.id) if guild else None
         
-        if guild_settings and guild_settings.get("moderation_enabled", True):
+        if guild_settings and guild_settings.get("moderation_enabled", False):
             content = message.content
             content_lower = content.lower() if content else ""
             author = message.author

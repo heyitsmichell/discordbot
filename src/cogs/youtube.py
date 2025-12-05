@@ -1,9 +1,10 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button
-import sqlite3
 from urllib.parse import quote_plus
 import config
+from database import get_user, clear_user_youtube
+
 class YouTube(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -41,24 +42,17 @@ class YouTube(commands.Cog):
     async def youtube(self, ctx, member: discord.Member = None):
         """Show linked YouTube account."""
         member = member or ctx.author
-        conn = sqlite3.connect(config.DB_FILE, timeout=10)
-        cur = conn.cursor()
-        cur.execute("SELECT youtube_channel FROM users WHERE discord_id = ?", (str(member.id),))
-        row = cur.fetchone()
-        conn.close()
-        if row and row[0]:
-            await ctx.send(f"{member.display_name}'s YouTube: **{row[0]}**")
+        user = get_user(str(member.id))
+        
+        if user and user.get("youtube_channel"):
+            await ctx.send(f"{member.display_name}'s YouTube: **{user['youtube_channel']}**")
         else:
             await ctx.send(f"{member.display_name} has not linked a YouTube account.")
     
     @commands.command()
     async def unlinkyoutube(self, ctx):
         """Unlink YouTube account."""
-        conn = sqlite3.connect(config.DB_FILE, timeout=10)
-        cur = conn.cursor()
-        cur.execute("UPDATE users SET youtube_channel=NULL WHERE discord_id=?", (str(ctx.author.id),))
-        conn.commit()
-        conn.close()
+        clear_user_youtube(str(ctx.author.id))
         await ctx.send(f"{ctx.author.mention}, your YouTube account has been unlinked.")
 
 async def setup(bot):

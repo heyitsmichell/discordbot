@@ -10,6 +10,7 @@ A Discord bot with moderation, auto-slowmode, Twitch/YouTube integration, and an
 - **Anti-Raid Protection**: Account age verification and burst join detection
 - **Twitch EventSub**: Real-time ban synchronization across platforms
 - **Lockdown System**: Quick server-wide slowmode controls
+- **Timezone Display**: Show users' local times based on city/country
 
 ## Prerequisites
 
@@ -17,7 +18,7 @@ A Discord bot with moderation, auto-slowmode, Twitch/YouTube integration, and an
 - Discord Token
 - Discord (for OAuth)
 - Twitch
-- SQLite3
+- Supabase
 
 ## Installation
 
@@ -47,8 +48,9 @@ TWITCH_EVENTSUB_SECRET=your_webhook_secret (at least 12 letters)
 TWITCH_CALLBACK_URL=https://yourdomain.com/twitch/events
 TWITCH_STREAMER_REDIRECT_URI=https://yourdomain.com/twitch/streamer/callback
 
-# Database
-DB_PATH=bot.db
+# Supabase
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your_supabase_anon_key
 
 # Flask (uncomment if for running locally)
 # PORT=5000
@@ -98,6 +100,15 @@ python main.py
 |   `/unlinkyoutube`    |    Unlink your YouTube account     |   `/unlinkyoutube`    |
 | `/linktwitchstreamer` | Link Twitch (streamer permissions) | `/linktwitchstreamer` |
 |      `/gettwid`       |  Get Twitch user ID from username  |  `/gettwid username`  |
+
+### Timezone Commands
+|    Command    |              Description                |           Usage             |
+|---------------|-----------------------------------------|-----------------------------|
+|  `/settime`   | Set your timezone based on city/country | `/settime <city> <country>` |
+|   `/mytime`   |       Show your current local time      |         `/mytime`           |
+|    `/time`    |      Show another user's local time     |       `/time @user`         |
+| `/removetime` |        Remove your timezone setting     |       `/removetime`         |
+|  `/alltimes`  | Show auto-updating embed with all times |        `/alltimes`          |
 
 ### Administrator Commands
 
@@ -208,6 +219,12 @@ Automatically adjusts channel slowmode based on message activity:
 **guild_settings**
 - `guild_id` (TEXT PRIMARY KEY)
 - Various configuration fields for each guild
+
+**user_timezones**
+- `discord_id` (TEXT PRIMARY KEY)
+- `city` (TEXT)
+- `country` (TEXT)
+- `timezone` (TEXT)
 
 ## API Endpoints
 

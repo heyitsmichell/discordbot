@@ -34,7 +34,8 @@ async def load_extensions():
         'cogs.twitch',
         'cogs.youtube',
         'cogs.lockdown',
-        'cogs.admin'
+        'cogs.admin',
+        'cogs.timezone'
         # 'cogs.autoban'
     ]
     
@@ -48,6 +49,19 @@ async def load_extensions():
 @bot.event
 async def on_ready():
     logging.info(f"✅ {bot.user.name} is ready!")
+    
+    # Sync slash commands with Discord
+    try:
+        # Clear guild-specific commands (to remove duplicates from earlier testing)
+        guild = discord.Object(id=1301470128004661268)
+        bot.tree.clear_commands(guild=guild)
+        await bot.tree.sync(guild=guild)
+        
+        # Sync global commands
+        synced = await bot.tree.sync()
+        logging.info(f"Synced {len(synced)} slash command(s)")
+    except Exception as e:
+        logging.error(f"Failed to sync slash commands: {e}")
     
     # Start background tasks
     global ban_queue
@@ -72,6 +86,13 @@ async def bot_help(ctx):
         "/unlinktwitch – Unlink your Twitch (Viewer)\n"
         "/unlinktwitchstreamer <twitch_id> – Unlink a streamer (Administrator)\n"
         "/gettwid <twitch_username> – Lookup Twitch numeric ID (meant for /subscribeban)\n\n"
+
+        "**Timezone**\n"
+        "/settime <city> <country> – Set your timezone\n"
+        "/mytime – Show your current local time\n"
+        "/time @user – Show another user's local time\n"
+        "/removetime – Remove your timezone setting\n"
+        "/alltimes – Show auto-updating embed with all times\n\n"
 
         "**Lookup (Administrator)**\n"
         "/twitchusers – List all users with linked Twitch account\n"
