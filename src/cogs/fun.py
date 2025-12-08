@@ -37,24 +37,37 @@ class Fun(commands.Cog):
                     pass
     
     @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
-        """Remove specific reactions added to the protected user's messages."""
-        if user.bot:
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        """Remove specific reactions added to the protected user's messages (works for all messages, including old ones)."""
+        if payload.user_id == self.bot.user.id:
             return
         
-        # Check if the message belongs to the protected user and reaction is in goat_reactions
-        if reaction.message.author.id == PROTECTED_USER_ID:
-            # Get the emoji string (handles both unicode and custom emojis)
-            emoji_str = str(reaction.emoji)
-            if emoji_str in self.goat_reactions:
-                try:
-                    await reaction.remove(user)
-                except discord.Forbidden:
-                    pass
-                except discord.NotFound:
-                    pass
-                except discord.HTTPException:
-                    pass
+        emoji_str = str(payload.emoji)
+        if emoji_str not in self.goat_reactions:
+            return
+        
+        # Fetch the channel
+        channel = self.bot.get_channel(payload.channel_id)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(payload.channel_id)
+            except (discord.NotFound, discord.Forbidden):
+                return
+        
+        # Fetch the message
+        try:
+            message = await channel.fetch_message(payload.message_id)
+        except (discord.NotFound, discord.Forbidden):
+            return
+        
+        # Check if message author is the protected user
+        if message.author.id == PROTECTED_USER_ID:
+            # Fetch the user who added the reaction
+            try:
+                user = await self.bot.fetch_user(payload.user_id)
+                await message.remove_reaction(payload.emoji, user)
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                pass
 
 
 async def setup(bot):
