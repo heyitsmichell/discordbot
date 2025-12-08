@@ -225,6 +225,7 @@ Automatically adjusts channel slowmode based on message activity:
 - `city` (TEXT)
 - `country` (TEXT)
 - `timezone` (TEXT)
+- `country_code` (TEXT)
 
 ## API Endpoints
 
