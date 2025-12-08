@@ -38,24 +38,23 @@ class Fun(commands.Cog):
     
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction, user):
-        """Remove reactions added to the protected user's messages."""
-        # Ignore bot reactions
+        """Remove specific reactions added to the protected user's messages."""
         if user.bot:
             return
         
-        # Check if the message belongs to the protected user
+        # Check if the message belongs to the protected user and reaction is in goat_reactions
         if reaction.message.author.id == PROTECTED_USER_ID:
-            try:
-                await reaction.remove(user)
-            except discord.Forbidden:
-                # Bot doesn't have permission to remove reactions
-                pass
-            except discord.NotFound:
-                # Message or reaction was deleted
-                pass
-            except discord.HTTPException:
-                # Failed to remove reaction for some other reason
-                pass
+            # Get the emoji string (handles both unicode and custom emojis)
+            emoji_str = str(reaction.emoji)
+            if emoji_str in self.goat_reactions:
+                try:
+                    await reaction.remove(user)
+                except discord.Forbidden:
+                    pass
+                except discord.NotFound:
+                    pass
+                except discord.HTTPException:
+                    pass
 
 
 async def setup(bot):
