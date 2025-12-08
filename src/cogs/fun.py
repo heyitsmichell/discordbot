@@ -5,9 +5,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# User ID to react to - set this in your .env file as GOAT_USER_ID
-# Or you can hardcode it here directly
 GOAT_USER_ID = int(os.getenv('GOAT_USER_ID', 0))
+PROTECTED_USER_ID = int(os.getenv('PROTECTED_USER_ID', 0))
 
 
 class Fun(commands.Cog):
@@ -15,17 +14,14 @@ class Fun(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        # Reactions to add to the special user's messages
         self.goat_reactions = ['🐐', '🔥']
     
     @commands.Cog.listener()
     async def on_message(self, message):
         """Listen for messages and add reactions to the special user."""
-        # Ignore bot messages
         if message.author.bot:
             return
         
-        # Check if the message author is the special user
         if message.author.id == GOAT_USER_ID:
             for emoji in self.goat_reactions:
                 try:
@@ -39,6 +35,27 @@ class Fun(commands.Cog):
                 except discord.HTTPException:
                     # Failed to add reaction for some other reason
                     pass
+    
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction, user):
+        """Remove reactions added to the protected user's messages."""
+        # Ignore bot reactions
+        if user.bot:
+            return
+        
+        # Check if the message belongs to the protected user
+        if reaction.message.author.id == PROTECTED_USER_ID:
+            try:
+                await reaction.remove(user)
+            except discord.Forbidden:
+                # Bot doesn't have permission to remove reactions
+                pass
+            except discord.NotFound:
+                # Message or reaction was deleted
+                pass
+            except discord.HTTPException:
+                # Failed to remove reaction for some other reason
+                pass
 
 
 async def setup(bot):
