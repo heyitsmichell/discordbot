@@ -53,9 +53,9 @@ class Moderation(commands.Cog):
         if add_time is None:
             return
         
-        # Check if reaction was removed within 1 second
+        # Check if reaction was removed within 2 seconds
         elapsed = time.time() - add_time
-        if elapsed <= 1.0:
+        if elapsed <= 2.0:
             await self._log_quick_reaction(payload, elapsed)
     
     async def _log_quick_reaction(self, payload: discord.RawReactionActionEvent, elapsed: float):
