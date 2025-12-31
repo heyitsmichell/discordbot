@@ -11,6 +11,10 @@ REDIRECT_URI = os.getenv('DISCORD_REDIRECT_URI')
 ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID"))
 MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID"))
 
+# Reaction Tracking Config
+REACTION_WATCH_CHANNEL_ID = int(os.getenv("REACTION_WATCH_CHANNEL_ID", 0)) or None
+REACTION_LOG_CHANNEL_ID = int(os.getenv("REACTION_LOG_CHANNEL_ID", 0)) or None
+
 # Twitch Config
 TWITCH_CLIENT_ID = os.getenv('TWITCH_CLIENT_ID')
 TWITCH_CLIENT_SECRET = os.getenv('TWITCH_CLIENT_SECRET')

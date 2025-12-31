@@ -18,6 +18,98 @@ class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.user_message_logs = {}
+        # Track reactions: key = (channel_id, message_id, user_id, emoji_str), value = timestamp
+        self.reaction_timestamps = {}
+    
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        """Track when a user adds a reaction in the watched channel."""
+        # Only track in the specified channel
+        if not config.REACTION_WATCH_CHANNEL_ID or payload.channel_id != config.REACTION_WATCH_CHANNEL_ID:
+            return
+        
+        # Ignore bot reactions
+        if payload.user_id == self.bot.user.id:
+            return
+        
+        # Store the timestamp for this reaction
+        key = (payload.channel_id, payload.message_id, payload.user_id, str(payload.emoji))
+        self.reaction_timestamps[key] = time.time()
+    
+    @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
+        """Detect when a user removes a reaction within 1 second of adding it."""
+        # Only track in the specified channel
+        if not config.REACTION_WATCH_CHANNEL_ID or payload.channel_id != config.REACTION_WATCH_CHANNEL_ID:
+            return
+        
+        # Ignore bot reactions
+        if payload.user_id == self.bot.user.id:
+            return
+        
+        key = (payload.channel_id, payload.message_id, payload.user_id, str(payload.emoji))
+        add_time = self.reaction_timestamps.pop(key, None)
+        
+        if add_time is None:
+            return
+        
+        # Check if reaction was removed within 1 second
+        elapsed = time.time() - add_time
+        if elapsed <= 1.0:
+            await self._log_quick_reaction(payload, elapsed)
+    
+    async def _log_quick_reaction(self, payload: discord.RawReactionActionEvent, elapsed: float):
+        """Log when a user quickly adds and removes a reaction on another user's message."""
+        if not config.REACTION_LOG_CHANNEL_ID:
+            return
+        
+        log_channel = self.bot.get_channel(config.REACTION_LOG_CHANNEL_ID)
+        if not log_channel:
+            try:
+                log_channel = await self.bot.fetch_channel(config.REACTION_LOG_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden):
+                return
+        
+        # Fetch the message to get the author
+        channel = self.bot.get_channel(payload.channel_id)
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(payload.channel_id)
+            except (discord.NotFound, discord.Forbidden):
+                return
+        
+        try:
+            message = await channel.fetch_message(payload.message_id)
+        except (discord.NotFound, discord.Forbidden):
+            return
+        
+        # Only log if the reactor is not the message author (reacting to someone else's message)
+        if payload.user_id == message.author.id:
+            return
+        
+        # Fetch the user who reacted
+        try:
+            reactor = await self.bot.fetch_user(payload.user_id)
+        except discord.NotFound:
+            reactor = None
+        
+        reactor_name = f"{reactor.mention} ({reactor.name})" if reactor else f"User ID: {payload.user_id}"
+        
+        embed = discord.Embed(
+            title="⚡ Quick Reaction Detected",
+            description=f"A user reacted and removed within {elapsed:.2f}s",
+            color=discord.Color.orange()
+        )
+        embed.add_field(name="Reactor", value=reactor_name, inline=True)
+        embed.add_field(name="Emoji", value=str(payload.emoji), inline=True)
+        embed.add_field(name="Message Author", value=f"{message.author.mention} ({message.author.name})", inline=True)
+        embed.add_field(name="Message", value=f"[Jump to message]({message.jump_url})", inline=False)
+        embed.set_footer(text=f"Channel: #{channel.name}")
+        
+        try:
+            await log_channel.send(embed=embed)
+        except discord.HTTPException:
+            pass
         
     @commands.Cog.listener()
     async def on_message(self, message):
