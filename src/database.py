@@ -498,3 +498,60 @@ def get_all_birthday_embeds() -> list:
     except Exception as e:
         print(f"Error fetching birthday embeds: {e}")
         return []
+
+
+# ==================== Birthday Announcement Functions ====================
+
+def update_birthday_announced(discord_id: str, year: int) -> bool:
+    """Mark a user's birthday as announced for the given year."""
+    try:
+        supabase.table("user_birthdays").update({"last_announced_year": year}).eq("discord_id", str(discord_id)).execute()
+        return True
+    except Exception as e:
+        print(f"Error updating birthday announced: {e}")
+        return False
+
+def get_birthdays_to_announce(day: int, month: int, year: int) -> list:
+    """Get birthdays that match day/month and haven't been announced this year."""
+    try:
+        response = supabase.table("user_birthdays").select("*").eq("day", day).eq("month", month).neq("last_announced_year", year).execute()
+        return response.data or []
+    except Exception as e:
+        print(f"Error fetching birthdays to announce: {e}")
+        return []
+
+
+# ==================== Birthday Channel Functions ====================
+
+def get_birthday_channel(guild_id: str) -> str | None:
+    """Get the birthday announcement channel for a guild."""
+    try:
+        response = supabase.table("birthday_channels").select("channel_id").eq("guild_id", str(guild_id)).execute()
+        if response.data:
+            return response.data[0]["channel_id"]
+        return None
+    except Exception as e:
+        print(f"Error fetching birthday channel: {e}")
+        return None
+
+def set_birthday_channel(guild_id: str, channel_id: str) -> bool:
+    """Set the birthday announcement channel for a guild."""
+    try:
+        data = {
+            "guild_id": str(guild_id),
+            "channel_id": str(channel_id)
+        }
+        supabase.table("birthday_channels").upsert(data).execute()
+        return True
+    except Exception as e:
+        print(f"Error setting birthday channel: {e}")
+        return False
+
+def remove_birthday_channel(guild_id: str) -> bool:
+    """Remove the birthday announcement channel for a guild."""
+    try:
+        supabase.table("birthday_channels").delete().eq("guild_id", str(guild_id)).execute()
+        return True
+    except Exception as e:
+        print(f"Error removing birthday channel: {e}")
+        return False

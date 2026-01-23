@@ -5,8 +5,11 @@ from datetime import datetime
 import asyncio
 from database import (
     get_user_birthday, set_user_birthday, remove_user_birthday, get_all_user_birthdays,
-    save_birthday_embed, update_birthday_embed_page, remove_birthday_embed, get_all_birthday_embeds
+    save_birthday_embed, update_birthday_embed_page, remove_birthday_embed, get_all_birthday_embeds,
+    get_birthdays_to_announce, update_birthday_announced, get_birthday_channel, set_birthday_channel,
+    get_user_timezone
 )
+import pytz
 import config
 
 # Month names for display
@@ -36,8 +39,10 @@ class Birthday(commands.Cog):
         self.updating_messages = {}  # guild_id -> {"message": msg, "page": int}
         self.page_reset_tasks = {}  # guild_id -> asyncio.Task for auto-reset
         self.update_birthday_embeds.start()
+        self.check_birthdays.start()
 
     def cog_unload(self):
+        self.check_birthdays.cancel()
         self.update_birthday_embeds.cancel()
         for task in self.page_reset_tasks.values():
             task.cancel()
@@ -212,6 +217,88 @@ class Birthday(commands.Cog):
                 remove_birthday_embed(str(guild_id))
             except Exception as e:
                 print(f"Error updating birthday embed: {e}")
+
+    @tasks.loop(minutes=5)
+    async def check_birthdays(self):
+        """Check for birthdays to announce based on user timezones."""
+        # Get all users with birthdays (we need to check everyone's timezone)
+        all_birthdays = get_all_user_birthdays()
+        current_utc = datetime.now(pytz.UTC)
+        
+        for bday_data in all_birthdays:
+            discord_id = bday_data["discord_id"]
+            day = bday_data["day"]
+            month = bday_data["month"]
+            last_year = bday_data.get("last_announced_year", 0)
+            
+            # 1. Get user timezone
+            tz_data = get_user_timezone(discord_id)
+            if tz_data and tz_data.get("timezone"):
+                user_tz_str = tz_data["timezone"]
+            else:
+                user_tz_str = "Australia/Sydney"  # Default
+                
+            try:
+                user_tz = pytz.timezone(user_tz_str)
+                user_now = current_utc.astimezone(user_tz)
+                
+                # Check if it's their birthday TODAY in their timezone
+                if user_now.day == day and user_now.month == month:
+                    # Check if already announced for this year (use user's year)
+                    if last_year != user_now.year:
+                        # ANNOUNCE!
+                        await self.announce_birthday(discord_id, user_now.year, user_tz_str)
+            except Exception as e:
+                print(f"Error checking birthday for {discord_id}: {e}")
+
+    @check_birthdays.before_loop
+    async def before_check_birthdays(self):
+        await self.bot.wait_until_ready()
+
+    async def announce_birthday(self, discord_id: str, year: int, timezone_str: str):
+        """Send birthday announcement to the configured channel."""
+        # Update DB first to prevent double-pings if sending fails
+        success = update_birthday_announced(discord_id, year)
+        if not success:
+            return
+
+        # Find mutual guilds with the user to announce in
+        # We need to find ONE valid channel to send the announcement.
+        # Prioritize the channel set by /setbirthdaychannel.
+        
+        user = self.bot.get_user(int(discord_id))
+        if not user:
+            try:
+                user = await self.bot.fetch_user(int(discord_id))
+            except Exception:
+                return # User not found at all
+        
+        # We need to find which guild to announce in. 
+        # A user might be in multiple guilds the bot is in.
+        # We check all mutual guilds for a configured birthday channel.
+        
+        for guild in self.bot.guilds:
+            member = guild.get_member(int(discord_id))
+            if not member:
+                continue
+                
+            channel_id = get_birthday_channel(str(guild.id))
+            if not channel_id:
+                continue
+                
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                continue
+                
+            # Send the message
+            try:
+                msg = (
+                    f"🎂 **Happy Birthday {member.mention}!** 🥳\n"
+                    f"Hope you have a fantastic day! ({timezone_str})"
+                )
+                await channel.send(msg)
+            except Exception as e:
+                print(f"Failed to send birthday msg in {guild.name}: {e}")
 
     @update_birthday_embeds.before_loop
     async def before_update_birthday_embeds(self):
@@ -402,6 +489,18 @@ class Birthday(commands.Cog):
             await self.refresh_guild_embed(interaction.guild)
         else:
             await interaction.response.send_message("❌ Failed to remove your birthday. Please try again later.", ephemeral=True)
+            
+    @app_commands.command(name="setbirthdaychannel", description="Set the channel for birthday announcements")
+    @slash_role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
+    @app_commands.describe(channel="The text channel to send announcements to")
+    async def setbirthdaychannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        """Set the channel where birthday announcements will be sent."""
+        success = set_birthday_channel(str(interaction.guild.id), str(channel.id))
+        
+        if success:
+            await interaction.response.send_message(f"✅ Birthday announcements will now be sent to {channel.mention}")
+        else:
+            await interaction.response.send_message("❌ Failed to set birthday channel.", ephemeral=True)
     
     @app_commands.command(name="allbirthdays", description="Show all upcoming birthdays")
     @slash_role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
