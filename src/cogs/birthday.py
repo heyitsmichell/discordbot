@@ -501,6 +501,33 @@ class Birthday(commands.Cog):
             await interaction.response.send_message(f"✅ Birthday announcements will now be sent to {channel.mention}")
         else:
             await interaction.response.send_message("❌ Failed to set birthday channel.", ephemeral=True)
+
+    @app_commands.command(name="testbirthday", description="Test the birthday announcement configuration")
+    @slash_role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
+    async def testbirthday(self, interaction: discord.Interaction):
+        """Send a test announcement to the configured channel."""
+        channel_id = get_birthday_channel(str(interaction.guild.id))
+        
+        if not channel_id:
+            await interaction.response.send_message("❌ No birthday channel set. Use `/setbirthdaychannel` first.", ephemeral=True)
+            return
+
+        channel = interaction.guild.get_channel(int(channel_id))
+        if not channel:
+            await interaction.response.send_message(f"❌ Configured channel (ID: {channel_id}) not found. Please set it again.", ephemeral=True)
+            return
+
+        try:
+            # Send test message to the configured channel
+            await channel.send(f"🎉 **Test Announcement**\nConfirmed! Birthday messages will be sent to this channel.")
+            
+            # Confirm to the user running the command
+            if channel.id == interaction.channel.id:
+                await interaction.response.send_message("✅ Test message sent!", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"✅ Test message sent to {channel.mention}!", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to send message: {e}", ephemeral=True)
     
     @app_commands.command(name="allbirthdays", description="Show all upcoming birthdays")
     @slash_role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
