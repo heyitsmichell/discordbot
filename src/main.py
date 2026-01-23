@@ -36,7 +36,8 @@ async def load_extensions():
         'cogs.lockdown',
         'cogs.admin',
         'cogs.timezone',
-        'cogs.fun'
+        'cogs.fun',
+        'cogs.birthday'
         # 'cogs.autoban'
     ]
     
@@ -94,6 +95,13 @@ async def bot_help(ctx):
         "/time @user – Show another user's local time\n"
         "/removetime – Remove your timezone setting\n"
         "/alltimes – Show auto-updating embed with all times\n\n"
+
+        "**Birthday**\n"
+        "/setbirthday <day> <month> – Set your birthday\n"
+        "/mybirthday – Show your birthday\n"
+        "/birthday @user – Show another user's birthday\n"
+        "/removebirthday – Remove your birthday setting\n"
+        "/allbirthdays – Show all upcoming birthdays (Admin)\n\n"
 
         "**Lookup (Administrator)**\n"
         "/twitchusers – List all users with linked Twitch account\n"

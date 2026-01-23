@@ -406,3 +406,95 @@ def get_all_timezone_embeds() -> list:
     except Exception as e:
         print(f"Error fetching timezone embeds: {e}")
         return []
+
+
+# ==================== User Birthday Functions ====================
+
+def get_user_birthday(discord_id: str) -> dict | None:
+    """Get a user's birthday info."""
+    try:
+        response = supabase.table("user_birthdays").select("*").eq("discord_id", str(discord_id)).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"Error fetching user birthday: {e}")
+        return None
+
+def set_user_birthday(discord_id: str, display_name: str, day: int, month: int) -> bool:
+    """Set a user's birthday."""
+    try:
+        data = {
+            "discord_id": str(discord_id),
+            "display_name": display_name,
+            "day": day,
+            "month": month
+        }
+        supabase.table("user_birthdays").upsert(data).execute()
+        return True
+    except Exception as e:
+        print(f"Error setting user birthday: {e}")
+        return False
+
+def remove_user_birthday(discord_id: str) -> bool:
+    """Remove a user's birthday."""
+    try:
+        supabase.table("user_birthdays").delete().eq("discord_id", str(discord_id)).execute()
+        return True
+    except Exception as e:
+        print(f"Error removing user birthday: {e}")
+        return False
+
+def get_all_user_birthdays() -> list:
+    """Get all users with birthdays set."""
+    try:
+        response = supabase.table("user_birthdays").select("*").execute()
+        return response.data or []
+    except Exception as e:
+        print(f"Error fetching all user birthdays: {e}")
+        return []
+
+
+# ==================== Birthday Embed Tracking Functions ====================
+
+def save_birthday_embed(guild_id: str, channel_id: str, message_id: str, page: int = 0):
+    """Save a birthday embed for tracking (persists across restarts)."""
+    try:
+        data = {
+            "guild_id": str(guild_id),
+            "channel_id": str(channel_id),
+            "message_id": str(message_id),
+            "page": page
+        }
+        supabase.table("birthday_embeds").upsert(data).execute()
+        return True
+    except Exception as e:
+        print(f"Error saving birthday embed: {e}")
+        return False
+
+def update_birthday_embed_page(guild_id: str, page: int):
+    """Update the page number for a birthday embed."""
+    try:
+        supabase.table("birthday_embeds").update({"page": page}).eq("guild_id", str(guild_id)).execute()
+        return True
+    except Exception as e:
+        print(f"Error updating birthday embed page: {e}")
+        return False
+
+def remove_birthday_embed(guild_id: str):
+    """Remove a birthday embed from tracking."""
+    try:
+        supabase.table("birthday_embeds").delete().eq("guild_id", str(guild_id)).execute()
+        return True
+    except Exception as e:
+        print(f"Error removing birthday embed: {e}")
+        return False
+
+def get_all_birthday_embeds() -> list:
+    """Get all tracked birthday embeds."""
+    try:
+        response = supabase.table("birthday_embeds").select("*").execute()
+        return response.data or []
+    except Exception as e:
+        print(f"Error fetching birthday embeds: {e}")
+        return []
