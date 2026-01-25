@@ -75,8 +75,8 @@ async def on_ready():
         except Exception as e:
             logging.exception("Failed to start ban_worker: %s", e)
 
-@bot.command(name="help")
-async def bot_help(ctx):
+@bot.tree.command(name="help", description="Show all available commands")
+async def bot_help(interaction: discord.Interaction):
     help_text = (
         "**Available commands**\n\n"
 
@@ -101,7 +101,8 @@ async def bot_help(ctx):
         "/mybirthday – Show your birthday\n"
         "/birthday @user – Show another user's birthday\n"
         "/removebirthday – Remove your birthday setting\n"
-        "/allbirthdays – Show all upcoming birthdays (Admin)\n\n"
+        "/allbirthdays – Show all upcoming birthdays (Admin)\n"
+        "/setbirthdaychannel #channel – Set birthday announcement channel (Admin)\n\n"
 
         "**Lookup (Administrator)**\n"
         "/twitchusers – List all users with linked Twitch account\n"
@@ -138,7 +139,7 @@ async def bot_help(ctx):
         "/getlogchannel – Show current global log channel\n"
         "/resetlogchannel – Reset global log channel\n\n"
     )
-    await ctx.send(help_text)
+    await interaction.response.send_message(help_text)
 
 @bot.command()
 async def hello(ctx):
