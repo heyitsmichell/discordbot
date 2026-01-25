@@ -12,7 +12,6 @@ from database import (
 import pytz
 import config
 
-# Month names for display
 MONTH_NAMES = [
     "", "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
@@ -32,12 +31,12 @@ def slash_role_check(*role_ids):
 
 
 class Birthday(commands.Cog):
-    PAGE_RESET_DELAY = 20  # seconds before auto-reset to page 1
+    PAGE_RESET_DELAY = 20
 
     def __init__(self, bot):
         self.bot = bot
-        self.updating_messages = {}  # guild_id -> {"message": msg, "page": int}
-        self.page_reset_tasks = {}  # guild_id -> asyncio.Task for auto-reset
+        self.updating_messages = {}
+        self.page_reset_tasks = {}
         self.update_birthday_embeds.start()
         self.check_birthdays.start()
 
@@ -48,7 +47,6 @@ class Birthday(commands.Cog):
             task.cancel()
 
     async def schedule_page_reset(self, guild_id: int):
-        """Schedule a page reset to page 1 after delay."""
         if guild_id in self.page_reset_tasks:
             self.page_reset_tasks[guild_id].cancel()
 
@@ -75,7 +73,6 @@ class Birthday(commands.Cog):
         self.page_reset_tasks[guild_id] = asyncio.create_task(reset_page())
 
     async def load_persisted_embeds(self):
-        """Load persisted embed tracking from database on startup."""
         embeds = get_all_birthday_embeds()
         loaded_count = 0
 
@@ -114,11 +111,9 @@ class Birthday(commands.Cog):
             print(f"✅ Loaded {loaded_count} persisted birthday embed(s)")
 
     def format_birthday(self, day: int, month: int) -> str:
-        """Format birthday as 'day Month' (e.g., '28 March')."""
         return f"{day} {MONTH_NAMES[month]}"
     
     def days_until_birthday(self, day: int, month: int) -> int:
-        """Calculate days until the next occurrence of this birthday."""
         today = datetime.now()
         current_year = today.year
         
@@ -138,7 +133,6 @@ class Birthday(commands.Cog):
         return delta.days
     
     def create_birthdays_embed(self, guild, page: int = 0) -> tuple[discord.Embed, int]:
-        """Create an embed showing upcoming birthdays sorted by proximity."""
         USERS_PER_PAGE = 10
         
         embed = discord.Embed(
@@ -172,22 +166,17 @@ class Birthday(commands.Cog):
             embed.description = "No members with birthdays are in this server"
             return embed, 1
         
-        # Sort by days until birthday (closest first)
         member_data.sort(key=lambda x: x["days_until"])
         
-        # Calculate pagination
         total_members = len(member_data)
         total_pages = max(1, (total_members + USERS_PER_PAGE - 1) // USERS_PER_PAGE)
         
-        # Clamp page
         page = max(0, min(page, total_pages - 1))
         
-        # Get members for current page
         start_idx = page * USERS_PER_PAGE
         end_idx = start_idx + USERS_PER_PAGE
         page_members = member_data[start_idx:end_idx]
         
-        # Build embed description
         lines = []
         for data in page_members:
             birthday_str = self.format_birthday(data["day"], data["month"])
@@ -197,13 +186,11 @@ class Birthday(commands.Cog):
         
         if total_pages > 1:
             embed.set_footer(text=f"Page {page + 1}/{total_pages} • Use ⬅️ ➡️ to navigate")
-        # else: default footer or empty
         
         return embed, total_pages
 
     @tasks.loop(hours=1)
     async def update_birthday_embeds(self):
-        """Update all active birthday embed messages."""
         for guild_id, data in list(self.updating_messages.items()):
             try:
                 guild = self.bot.get_guild(guild_id)
@@ -220,8 +207,6 @@ class Birthday(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def check_birthdays(self):
-        """Check for birthdays to announce based on user timezones."""
-        # Get all users with birthdays (we need to check everyone's timezone)
         all_birthdays = get_all_user_birthdays()
         current_utc = datetime.now(pytz.UTC)
         
@@ -231,22 +216,18 @@ class Birthday(commands.Cog):
             month = bday_data["month"]
             last_year = bday_data.get("last_announced_year", 0)
             
-            # 1. Get user timezone
             tz_data = get_user_timezone(discord_id)
             if tz_data and tz_data.get("timezone"):
                 user_tz_str = tz_data["timezone"]
             else:
-                user_tz_str = "Australia/Sydney"  # Default
+                user_tz_str = "Australia/Sydney"
                 
             try:
                 user_tz = pytz.timezone(user_tz_str)
                 user_now = current_utc.astimezone(user_tz)
                 
-                # Check if it's their birthday TODAY in their timezone
                 if user_now.day == day and user_now.month == month:
-                    # Check if already announced for this year (use user's year)
                     if last_year != user_now.year:
-                        # ANNOUNCE!
                         await self.announce_birthday(discord_id, user_now.year, user_tz_str)
             except Exception as e:
                 print(f"Error checking birthday for {discord_id}: {e}")
@@ -257,25 +238,16 @@ class Birthday(commands.Cog):
 
     async def announce_birthday(self, discord_id: str, year: int, timezone_str: str):
         """Send birthday announcement to the configured channel."""
-        # Update DB first to prevent double-pings if sending fails
         success = update_birthday_announced(discord_id, year)
         if not success:
             return
 
-        # Find mutual guilds with the user to announce in
-        # We need to find ONE valid channel to send the announcement.
-        # Prioritize the channel set by /setbirthdaychannel.
-        
         user = self.bot.get_user(int(discord_id))
         if not user:
             try:
                 user = await self.bot.fetch_user(int(discord_id))
             except Exception:
-                return # User not found at all
-        
-        # We need to find which guild to announce in. 
-        # A user might be in multiple guilds the bot is in.
-        # We check all mutual guilds for a configured birthday channel.
+                return
         
         for guild in self.bot.guilds:
             member = guild.get_member(int(discord_id))
@@ -290,11 +262,9 @@ class Birthday(commands.Cog):
             if not channel:
                 continue
                 
-            # Send the message
             try:
                 msg = (
                     f"🎂 **Happy Birthday {member.mention}!** 🥳\n"
-                    f"Hope you have a fantastic day! ({timezone_str})"
                 )
                 await channel.send(msg)
             except Exception as e:
@@ -394,8 +364,6 @@ class Birthday(commands.Cog):
                 await message.remove_reaction(payload.emoji, member)
         except Exception:
             pass
-    
-    # ===================== SLASH COMMANDS =====================
     
     @app_commands.command(name="setbirthday", description="Set your birthday")
     @app_commands.describe(
@@ -501,33 +469,6 @@ class Birthday(commands.Cog):
             await interaction.response.send_message(f"✅ Birthday announcements will now be sent to {channel.mention}")
         else:
             await interaction.response.send_message("❌ Failed to set birthday channel.", ephemeral=True)
-
-    @app_commands.command(name="testbirthday", description="Test the birthday announcement configuration")
-    @slash_role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
-    async def testbirthday(self, interaction: discord.Interaction):
-        """Send a test announcement to the configured channel."""
-        channel_id = get_birthday_channel(str(interaction.guild.id))
-        
-        if not channel_id:
-            await interaction.response.send_message("❌ No birthday channel set. Use `/setbirthdaychannel` first.", ephemeral=True)
-            return
-
-        channel = interaction.guild.get_channel(int(channel_id))
-        if not channel:
-            await interaction.response.send_message(f"❌ Configured channel (ID: {channel_id}) not found. Please set it again.", ephemeral=True)
-            return
-
-        try:
-            # Send test message to the configured channel
-            await channel.send(f"🎉 **Test Announcement**\nConfirmed! Birthday messages will be sent to this channel.")
-            
-            # Confirm to the user running the command
-            if channel.id == interaction.channel.id:
-                await interaction.response.send_message("✅ Test message sent!", ephemeral=True)
-            else:
-                await interaction.response.send_message(f"✅ Test message sent to {channel.mention}!", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f"❌ Failed to send message: {e}", ephemeral=True)
     
     @app_commands.command(name="allbirthdays", description="Show all upcoming birthdays")
     @slash_role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
