@@ -17,7 +17,6 @@ if GEMINI_API_KEY:
 class AI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.model = genai.GenerativeModel('gemini-2.0-flash') if GEMINI_API_KEY else None
     
     def get_server_emotes(self, guild: discord.Guild) -> str:
         if not guild or not guild.emojis:
@@ -47,31 +46,39 @@ For example:
 Only suggest reactions when it makes sense contextually. Keep reactions to 1-3 emotes maximum."""
 
     async def generate_response(self, message: str, guild: discord.Guild) -> tuple[str, list[str]]:
-        if not self.model:
+        if not GEMINI_API_KEY:
             return "❌ Gemini API key not configured.", []
         
-        try:
-            system_prompt = self.build_system_prompt(guild)
-            
-            response = self.model.generate_content(
-                f"{system_prompt}\n\nUser message: {message}"
-            )
-            
-            response_text = response.text
-            
-            reactions = []
-            react_match = re.search(r'\[REACT:\s*(.+?)\]', response_text, re.IGNORECASE)
-            if react_match:
-                reaction_str = react_match.group(1)
-                emote_pattern = r'<a?:\w+:\d+>'
-                reactions = re.findall(emote_pattern, reaction_str)
-                response_text = re.sub(r'\[REACT:\s*.+?\]', '', response_text).strip()
-            
-            return response_text, reactions[:3]
-            
-        except Exception as e:
-            print(f"Gemini API error: {e}")
-            return f"❌ Failed to generate response: {str(e)}", []
+        models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+        system_prompt = self.build_system_prompt(guild)
+        
+        for model_name in models:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(
+                    f"{system_prompt}\n\nUser message: {message}"
+                )
+                
+                response_text = response.text
+                
+                reactions = []
+                react_match = re.search(r'\[REACT:\s*(.+?)\]', response_text, re.IGNORECASE)
+                if react_match:
+                    reaction_str = react_match.group(1)
+                    emote_pattern = r'<a?:\w+:\d+>'
+                    reactions = re.findall(emote_pattern, reaction_str)
+                    response_text = re.sub(r'\[REACT:\s*.+?\]', '', response_text).strip()
+                
+                return response_text, reactions[:3]
+                
+            except Exception as e:
+                error_str = str(e).lower()
+                if '429' in error_str or 'quota' in error_str or 'rate' in error_str:
+                    continue
+                print(f"Gemini API error ({model_name}): {e}")
+                return f"❌ Failed to generate response: {str(e)}", []
+        
+        return "⏳ All AI models are currently rate limited. Please try again later.", []
     
     async def add_reactions(self, message: discord.Message, reactions: list[str]):
         for reaction in reactions:
