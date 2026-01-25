@@ -11,6 +11,8 @@ A Discord bot with moderation, auto-slowmode, Twitch/YouTube integration, and an
 - **Twitch EventSub**: Real-time ban synchronization across platforms
 - **Lockdown System**: Quick server-wide slowmode controls
 - **Timezone Display**: Show users' local times based on city/country
+- **Birthday Tracking**: Track and announce member birthdays with auto-updating embeds
+- **Fun Reactions**: Auto-react to specific users' messages
 
 ## Prerequisites
 
@@ -110,6 +112,14 @@ python main.py
 | `/removetime` |        Remove your timezone setting     |       `/removetime`         |
 |  `/alltimes`  | Show auto-updating embed with all times |        `/alltimes`          |
 
+### Birthday Commands
+|      Command       |              Description                |           Usage            |
+|--------------------|----------------------------------------|----------------------------|
+|  `/setbirthday`    | Set your birthday (day and month)      | `/setbirthday <day> <month>` |
+|   `/mybirthday`    |       Show your saved birthday         |       `/mybirthday`        |
+|    `/birthday`     |      Show another user's birthday      |     `/birthday @user`      |
+| `/removebirthday`  |       Remove your birthday setting     |     `/removebirthday`      |
+
 ### Administrator Commands
 
 #### User Management
@@ -163,6 +173,12 @@ python main.py
 |  `/getlogchannel`  |  Show current log channel  |     `/getlogchannel`      |
 | `/resetlogchannel` |      Reset log channel     |    `/resetlogchannel`     |
 
+#### Birthday Management
+|        Command         |            Description             |             Usage              |
+|------------------------|------------------------------------|--------------------------------|
+| `/setbirthdaychannel`  | Set birthday announcement channel  | `/setbirthdaychannel #channel` |
+|    `/allbirthdays`     | Show auto-updating birthday embed  |        `/allbirthdays`         |
+
 ## Features Deep Dive
 
 ### Auto-Slowmode System
@@ -199,6 +215,20 @@ Automatically adjusts channel slowmode based on message activity:
 - **Ban Synchronization**: Real-time ban events via EventSub webhooks
 - **Cross-Platform Enforcement**: Automatically ban linked accounts
 
+### Birthday System
+
+- **Birthday Tracking**: Users can set their birthday (day and month)
+- **Auto-Updating Embed**: Live embed showing upcoming birthdays sorted by proximity
+- **Birthday Announcements**: Automatic announcements on users' birthdays (respects user timezone)
+- **Pagination**: Navigate through birthdays with reaction controls
+- **Page Auto-Reset**: Returns to first page after 20 seconds of inactivity
+
+### Fun Features
+
+- **Auto-Reactions**: Automatically adds 🐐 and 🔥 reactions to specified user's messages
+- **Owner Reactions**: Adds 🩷 reaction to bot owner's messages
+- **Reaction Protection**: Removes 🐐/🔥 reactions from protected user's messages
+
 ## Database Schema
 
 ### Tables
@@ -226,6 +256,23 @@ Automatically adjusts channel slowmode based on message activity:
 - `country` (TEXT)
 - `timezone` (TEXT)
 - `country_code` (TEXT)
+
+**user_birthdays**
+- `discord_id` (TEXT PRIMARY KEY)
+- `display_name` (TEXT)
+- `day` (INTEGER)
+- `month` (INTEGER)
+- `last_announced_year` (INTEGER)
+
+**birthday_embeds**
+- `guild_id` (TEXT PRIMARY KEY)
+- `channel_id` (TEXT)
+- `message_id` (TEXT)
+- `page` (INTEGER)
+
+**birthday_channels**
+- `guild_id` (TEXT PRIMARY KEY)
+- `channel_id` (TEXT)
 
 ## API Endpoints
 
