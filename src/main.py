@@ -37,7 +37,8 @@ async def load_extensions():
         'cogs.admin',
         'cogs.timezone',
         'cogs.fun',
-        'cogs.birthday'
+        'cogs.birthday',
+        'cogs.ai'
         # 'cogs.autoban'
     ]
     

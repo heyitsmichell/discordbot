@@ -13,6 +13,7 @@ A Discord bot with moderation, auto-slowmode, Twitch/YouTube integration, and an
 - **Timezone Display**: Show users' local times based on city/country
 - **Birthday Tracking**: Track and announce member birthdays with auto-updating embeds
 - **Fun Reactions**: Auto-react to specific users' messages
+- **AI Chat**: Gemini-powered AI responses with server emote support
 
 ## Prerequisites
 
@@ -56,6 +57,9 @@ SUPABASE_KEY=your_supabase_anon_key
 
 # Flask (uncomment if for running locally)
 # PORT=5000
+
+# Gemini AI
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 4. Run the bot:
@@ -119,6 +123,12 @@ python main.py
 |   `/mybirthday`    |       Show your saved birthday         |       `/mybirthday`        |
 |    `/birthday`     |      Show another user's birthday      |     `/birthday @user`      |
 | `/removebirthday`  |       Remove your birthday setting     |     `/removebirthday`      |
+
+### AI Commands
+|  Command   |           Description           |       Usage        |
+|------------|--------------------------------|--------------------||
+|  `/ask`    | Ask the AI a question          | `/ask <question>`  |
+| `@Bot`     | Mention the bot to chat        | `@Bot hello!`      |
 
 ### Administrator Commands
 
