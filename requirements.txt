@@ -7,4 +7,4 @@ supabase
 geopy
 timezonefinder
 pytz
-google-generativeai
+google-genai

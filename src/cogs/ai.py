@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-import google.generativeai as genai
+from google import genai
 import os
 import re
 from dotenv import load_dotenv
@@ -10,13 +10,10 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-
-
 class AI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
     
     def get_server_emotes(self, guild: discord.Guild) -> str:
         if not guild or not guild.emojis:
@@ -46,7 +43,7 @@ For example:
 Only suggest reactions when it makes sense contextually. Keep reactions to 1-3 emotes maximum."""
 
     async def generate_response(self, message: str, guild: discord.Guild) -> tuple[str, list[str]]:
-        if not GEMINI_API_KEY:
+        if not self.client:
             return "❌ Gemini API key not configured.", []
         
         models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
@@ -54,9 +51,9 @@ Only suggest reactions when it makes sense contextually. Keep reactions to 1-3 e
         
         for model_name in models:
             try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(
-                    f"{system_prompt}\n\nUser message: {message}"
+                response = await self.client.aio.models.generate_content(
+                    model=model_name,
+                    contents=f"{system_prompt}\n\nUser message: {message}"
                 )
                 
                 response_text = response.text
