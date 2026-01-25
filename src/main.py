@@ -52,20 +52,12 @@ async def load_extensions():
 async def on_ready():
     logging.info(f"✅ {bot.user.name} is ready!")
     
-    # Sync slash commands with Discord
     try:
-        # Clear guild-specific commands (to remove duplicates from earlier testing)
-        guild = discord.Object(id=1301470128004661268)
-        bot.tree.clear_commands(guild=guild)
-        await bot.tree.sync(guild=guild)
-        
-        # Sync global commands
         synced = await bot.tree.sync()
         logging.info(f"Synced {len(synced)} slash command(s)")
     except Exception as e:
         logging.error(f"Failed to sync slash commands: {e}")
     
-    # Start background tasks
     global ban_queue
     if ban_queue is not None:
         try:
