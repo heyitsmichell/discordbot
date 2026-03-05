@@ -116,6 +116,22 @@ class Moderation(commands.Cog):
         if message.author.bot:
             return
         
+        # Ping Protection
+        if config.OWNER_ID and config.MOD_ROLE_ID:
+            if any(user.id == config.OWNER_ID for user in message.mentions):
+                if isinstance(message.author, discord.Member):
+                    if not any(role.id == config.MOD_ROLE_ID for role in message.author.roles):
+                        try:
+                            await message.delete()
+                        except (discord.NotFound, discord.Forbidden):
+                            pass
+                        
+                        try:
+                            await message.author.send("⚠️ Please refrain from pinging the streamer.")
+                        except discord.Forbidden:
+                            pass
+                        return
+
         guild = message.guild
         guild_settings = get_guild_settings(guild.id) if guild else None
         

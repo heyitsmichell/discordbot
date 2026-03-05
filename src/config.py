@@ -8,8 +8,9 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 CLIENT_ID = os.getenv('DISCORD_CLIENT_ID')
 CLIENT_SECRET = os.getenv('DISCORD_CLIENT_SECRET')
 REDIRECT_URI = os.getenv('DISCORD_REDIRECT_URI')
-ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID"))
-MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID"))
+ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID")) if os.getenv("ADMIN_ROLE_ID") else None
+MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID")) if os.getenv("MOD_ROLE_ID") else None
+OWNER_ID = int(os.getenv("OWNER")) if os.getenv("OWNER") else None
 
 # Reaction Tracking Config
 REACTION_WATCH_CHANNEL_ID = int(os.getenv("REACTION_WATCH_CHANNEL_ID", 0)) or None
