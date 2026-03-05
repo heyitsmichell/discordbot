@@ -35,15 +35,15 @@ class Fun(commands.Cog):
                     # Failed to add reaction for some other reason
                     pass
         
-        if message.author.id == OWNER_USER_ID:
-            try:
-                await message.add_reaction(self.owner_reaction)
-            except discord.Forbidden:
-                pass
-            except discord.NotFound:
-                pass
-            except discord.HTTPException:
-                pass
+        # if message.author.id == OWNER_USER_ID:
+        #     try:
+        #         await message.add_reaction(self.owner_reaction)
+        #     except discord.Forbidden:
+        #         pass
+        #     except discord.NotFound:
+        #         pass
+        #     except discord.HTTPException:
+        #         pass
     
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
