@@ -118,7 +118,7 @@ class Moderation(commands.Cog):
         
         # Ping Protection
         if config.OWNER_ID and config.MOD_ROLE_ID:
-            if any(user.id == config.OWNER_ID for user in message.mentions):
+            if f"<@{config.OWNER_ID}>" in message.content or f"<@!{config.OWNER_ID}>" in message.content:
                 if isinstance(message.author, discord.Member):
                     if not any(role.id == config.MOD_ROLE_ID for role in message.author.roles):
                         try:
