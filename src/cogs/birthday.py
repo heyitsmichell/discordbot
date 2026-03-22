@@ -191,6 +191,9 @@ class Birthday(commands.Cog):
 
     @tasks.loop(hours=1)
     async def update_birthday_embeds(self):
+        # Pre-fetch birthdays in a background thread to prevent blocking the event loop
+        await asyncio.to_thread(get_all_user_birthdays)
+        
         for guild_id, data in list(self.updating_messages.items()):
             try:
                 guild = self.bot.get_guild(guild_id)
@@ -207,7 +210,7 @@ class Birthday(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def check_birthdays(self):
-        all_birthdays = get_all_user_birthdays()
+        all_birthdays = await asyncio.to_thread(get_all_user_birthdays)
         current_utc = datetime.now(pytz.UTC)
         
         for bday_data in all_birthdays:

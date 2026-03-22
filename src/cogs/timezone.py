@@ -259,6 +259,9 @@ class Timezone(commands.Cog):
     @tasks.loop(minutes=1)
     async def update_time_embeds(self):
         """Update all active time embed messages."""
+        # Pre-fetch timezones in a background thread to prevent blocking the event loop
+        await asyncio.to_thread(get_all_user_timezones)
+        
         for guild_id, data in list(self.updating_messages.items()):
             try:
                 guild = self.bot.get_guild(guild_id)

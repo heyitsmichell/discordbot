@@ -335,6 +335,13 @@ def get_discord_ids_by_twitch(twitch_identifier: str) -> list:
 
 def get_user_timezone(discord_id: str) -> dict | None:
     """Get a user's timezone info."""
+    global TIMEZONES_CACHE
+    if TIMEZONES_CACHE is not None:
+        for tz in TIMEZONES_CACHE:
+            if tz.get("discord_id") == str(discord_id):
+                return tz
+        return None  # Cache is full table, so if not found, it doesn't exist
+        
     try:
         response = supabase.table("user_timezones").select("*").eq("discord_id", str(discord_id)).execute()
         if response.data:
@@ -436,6 +443,13 @@ def get_all_timezone_embeds() -> list:
 
 def get_user_birthday(discord_id: str) -> dict | None:
     """Get a user's birthday info."""
+    global BIRTHDAYS_CACHE
+    if BIRTHDAYS_CACHE is not None:
+        for bday in BIRTHDAYS_CACHE:
+            if bday.get("discord_id") == str(discord_id):
+                return bday
+        return None
+        
     try:
         response = supabase.table("user_birthdays").select("*").eq("discord_id", str(discord_id)).execute()
         if response.data:
