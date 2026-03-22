@@ -1,20 +1,36 @@
 import os
 import json
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 import config
 
 load_dotenv()
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
-supabase: Client = create_client(url, key)
+
+options = ClientOptions(headers={"User-Agent": "DiscordBot/1.0 (Render Service; +https://render.com)"})
+
+if url and key:
+    supabase: Client = create_client(url, key, options=options)
+else:
+    # Just to prevent crashes locally if env is missing during tests
+    supabase: Client = create_client("https://dummy.supabase.co", "dummy", options=options)
+
+TIMEZONES_CACHE = None
+BIRTHDAYS_CACHE = None
+
+def format_supabase_error(e: Exception) -> str:
+    err_str = str(e)
+    if "<html" in err_str.lower() or "cloudflare" in err_str.lower():
+        return "Supabase API returned an HTML error page (likely a 502 Bad Gateway or Cloudflare block)."
+    return err_str
 
 def init_db():
     try:
         supabase.table("guild_settings").select("guild_id").limit(1).execute()
         print("Connected to Supabase successfully.")
     except Exception as e:
-        print(f"Error connecting to Supabase: {e}")
+        print(f"Error connecting to Supabase: {format_supabase_error(e)}")
 
 def ensure_users_has_twitch_id():
     # Legacy migration function 
@@ -25,7 +41,7 @@ def get_guild_settings(guild_id: int) -> dict:
         response = supabase.table("guild_settings").select("*").eq("guild_id", str(guild_id)).execute()
         data = response.data
     except Exception as e:
-        print(f"Error fetching guild settings: {e}")
+        print(f"Error fetching guild settings: {format_supabase_error(e)}")
         data = []
 
     if not data:
@@ -95,7 +111,7 @@ def save_guild_settings(guild_id: int, settings: dict):
     try:
         supabase.table("guild_settings").upsert(data_to_insert).execute()
     except Exception as e:
-        print(f"Error saving guild settings: {e}")
+        print(f"Error saving guild settings: {format_supabase_error(e)}")
 
 
 # ==================== Users Table Functions ====================
@@ -108,7 +124,7 @@ def get_user(discord_id: str) -> dict | None:
             return response.data[0]
         return None
     except Exception as e:
-        print(f"Error fetching user: {e}")
+        print(f"Error fetching user: {format_supabase_error(e)}")
         return None
 
 def get_all_users_with_twitch() -> list:
@@ -117,7 +133,7 @@ def get_all_users_with_twitch() -> list:
         response = supabase.table("users").select("discord_id, twitch_username").not_.is_("twitch_username", "null").execute()
         return response.data or []
     except Exception as e:
-        print(f"Error fetching Twitch users: {e}")
+        print(f"Error fetching Twitch users: {format_supabase_error(e)}")
         return []
 
 def get_all_users_with_youtube() -> list:
@@ -126,7 +142,7 @@ def get_all_users_with_youtube() -> list:
         response = supabase.table("users").select("discord_id, youtube_channel").not_.is_("youtube_channel", "null").execute()
         return response.data or []
     except Exception as e:
-        print(f"Error fetching YouTube users: {e}")
+        print(f"Error fetching YouTube users: {format_supabase_error(e)}")
         return []
 
 def get_all_twitch_ids() -> list:
@@ -135,7 +151,7 @@ def get_all_twitch_ids() -> list:
         response = supabase.table("users").select("twitch_id").not_.is_("twitch_id", "null").execute()
         return [r["twitch_id"] for r in response.data if r.get("twitch_id")]
     except Exception as e:
-        print(f"Error fetching Twitch IDs: {e}")
+        print(f"Error fetching Twitch IDs: {format_supabase_error(e)}")
         return []
 
 def upsert_user(discord_id: str, twitch_username: str = None, youtube_channel: str = None, twitch_id: str = None):
@@ -162,7 +178,7 @@ def upsert_user(discord_id: str, twitch_username: str = None, youtube_channel: s
         
         supabase.table("users").upsert(data).execute()
     except Exception as e:
-        print(f"Error upserting user: {e}")
+        print(f"Error upserting user: {format_supabase_error(e)}")
 
 def update_user_twitch(discord_id: str, twitch_username: str = None, twitch_id: str = None):
     """Update Twitch fields for a user."""
@@ -176,7 +192,7 @@ def update_user_twitch(discord_id: str, twitch_username: str = None, twitch_id: 
         if data:
             supabase.table("users").update(data).eq("discord_id", str(discord_id)).execute()
     except Exception as e:
-        print(f"Error updating user Twitch: {e}")
+        print(f"Error updating user Twitch: {format_supabase_error(e)}")
 
 def update_twitch_username_by_id(twitch_id: str, twitch_username: str):
     """Update twitch_username for all users with a given twitch_id."""
@@ -184,7 +200,7 @@ def update_twitch_username_by_id(twitch_id: str, twitch_username: str):
         supabase.table("users").update({"twitch_username": twitch_username}).eq("twitch_id", twitch_id).execute()
         return True
     except Exception as e:
-        print(f"Error updating Twitch username by ID: {e}")
+        print(f"Error updating Twitch username by ID: {format_supabase_error(e)}")
         return False
 
 def clear_user_twitch(discord_id: str):
@@ -192,14 +208,14 @@ def clear_user_twitch(discord_id: str):
     try:
         supabase.table("users").update({"twitch_username": None, "twitch_id": None}).eq("discord_id", str(discord_id)).execute()
     except Exception as e:
-        print(f"Error clearing user Twitch: {e}")
+        print(f"Error clearing user Twitch: {format_supabase_error(e)}")
 
 def clear_user_youtube(discord_id: str):
     """Clear YouTube field for a user."""
     try:
         supabase.table("users").update({"youtube_channel": None}).eq("discord_id", str(discord_id)).execute()
     except Exception as e:
-        print(f"Error clearing user YouTube: {e}")
+        print(f"Error clearing user YouTube: {format_supabase_error(e)}")
 
 
 # ==================== Streamers Table Functions ====================
@@ -212,7 +228,7 @@ def get_streamer(discord_id: str) -> dict | None:
             return response.data[0]
         return None
     except Exception as e:
-        print(f"Error fetching streamer: {e}")
+        print(f"Error fetching streamer: {format_supabase_error(e)}")
         return None
 
 def get_streamer_by_twitch_id(twitch_id: str) -> dict | None:
@@ -223,7 +239,7 @@ def get_streamer_by_twitch_id(twitch_id: str) -> dict | None:
             return response.data[0]
         return None
     except Exception as e:
-        print(f"Error fetching streamer by Twitch ID: {e}")
+        print(f"Error fetching streamer by Twitch ID: {format_supabase_error(e)}")
         return None
 
 def upsert_streamer(discord_id: str, twitch_id: str, twitch_username: str, access_token: str, refresh_token: str):
@@ -238,7 +254,7 @@ def upsert_streamer(discord_id: str, twitch_id: str, twitch_username: str, acces
         }
         supabase.table("streamers").upsert(data).execute()
     except Exception as e:
-        print(f"Error upserting streamer: {e}")
+        print(f"Error upserting streamer: {format_supabase_error(e)}")
 
 def delete_streamer_by_twitch_id(twitch_id: str) -> str | None:
     """Delete a streamer by Twitch ID and return the discord_id."""
@@ -250,7 +266,7 @@ def delete_streamer_by_twitch_id(twitch_id: str) -> str | None:
             return discord_id
         return None
     except Exception as e:
-        print(f"Error deleting streamer by Twitch ID: {e}")
+        print(f"Error deleting streamer by Twitch ID: {format_supabase_error(e)}")
         return None
 
 def delete_streamer_by_discord_id(discord_id: str) -> str | None:
@@ -263,7 +279,7 @@ def delete_streamer_by_discord_id(discord_id: str) -> str | None:
             return twitch_id
         return None
     except Exception as e:
-        print(f"Error deleting streamer by Discord ID: {e}")
+        print(f"Error deleting streamer by Discord ID: {format_supabase_error(e)}")
         return None
 
 def update_streamer_tokens(discord_id: str, access_token: str, refresh_token: str):
@@ -274,7 +290,7 @@ def update_streamer_tokens(discord_id: str, access_token: str, refresh_token: st
             "refresh_token": refresh_token
         }).eq("discord_id", str(discord_id)).execute()
     except Exception as e:
-        print(f"Error updating streamer tokens: {e}")
+        print(f"Error updating streamer tokens: {format_supabase_error(e)}")
 
 
 # ==================== Discord ID Lookup Functions ====================
@@ -308,7 +324,7 @@ def get_discord_ids_by_twitch(twitch_identifier: str) -> list:
             discord_ids.extend([r["discord_id"] for r in response.data if r.get("discord_id")])
     
     except Exception as e:
-        print(f"Error looking up Discord IDs by Twitch: {e}")
+        print(f"Error looking up Discord IDs by Twitch: {format_supabase_error(e)}")
     
     # Return unique IDs
     seen = set()
@@ -325,11 +341,12 @@ def get_user_timezone(discord_id: str) -> dict | None:
             return response.data[0]
         return None
     except Exception as e:
-        print(f"Error fetching user timezone: {e}")
+        print(f"Error fetching user timezone: {format_supabase_error(e)}")
         return None
 
 def set_user_timezone(discord_id: str, city: str, country: str, timezone: str, country_code: str = None):
     """Set a user's timezone."""
+    global TIMEZONES_CACHE
     try:
         data = {
             "discord_id": str(discord_id),
@@ -339,27 +356,34 @@ def set_user_timezone(discord_id: str, city: str, country: str, timezone: str, c
             "country_code": country_code or ""
         }
         supabase.table("user_timezones").upsert(data).execute()
+        TIMEZONES_CACHE = None
         return True
     except Exception as e:
-        print(f"Error setting user timezone: {e}")
+        print(f"Error setting user timezone: {format_supabase_error(e)}")
         return False
 
 def remove_user_timezone(discord_id: str) -> bool:
     """Remove a user's timezone."""
+    global TIMEZONES_CACHE
     try:
         supabase.table("user_timezones").delete().eq("discord_id", str(discord_id)).execute()
+        TIMEZONES_CACHE = None
         return True
     except Exception as e:
-        print(f"Error removing user timezone: {e}")
+        print(f"Error removing user timezone: {format_supabase_error(e)}")
         return False
 
 def get_all_user_timezones() -> list:
     """Get all users with timezones set."""
+    global TIMEZONES_CACHE
+    if TIMEZONES_CACHE is not None:
+        return TIMEZONES_CACHE
     try:
         response = supabase.table("user_timezones").select("*").execute()
-        return response.data or []
+        TIMEZONES_CACHE = response.data or []
+        return TIMEZONES_CACHE
     except Exception as e:
-        print(f"Error fetching all user timezones: {e}")
+        print(f"Error fetching all user timezones: {format_supabase_error(e)}")
         return []
 
 
@@ -377,7 +401,7 @@ def save_timezone_embed(guild_id: str, channel_id: str, message_id: str, page: i
         supabase.table("timezone_embeds").upsert(data).execute()
         return True
     except Exception as e:
-        print(f"Error saving timezone embed: {e}")
+        print(f"Error saving timezone embed: {format_supabase_error(e)}")
         return False
 
 def update_timezone_embed_page(guild_id: str, page: int):
@@ -386,7 +410,7 @@ def update_timezone_embed_page(guild_id: str, page: int):
         supabase.table("timezone_embeds").update({"page": page}).eq("guild_id", str(guild_id)).execute()
         return True
     except Exception as e:
-        print(f"Error updating timezone embed page: {e}")
+        print(f"Error updating timezone embed page: {format_supabase_error(e)}")
         return False
 
 def remove_timezone_embed(guild_id: str):
@@ -395,7 +419,7 @@ def remove_timezone_embed(guild_id: str):
         supabase.table("timezone_embeds").delete().eq("guild_id", str(guild_id)).execute()
         return True
     except Exception as e:
-        print(f"Error removing timezone embed: {e}")
+        print(f"Error removing timezone embed: {format_supabase_error(e)}")
         return False
 
 def get_all_timezone_embeds() -> list:
@@ -404,7 +428,7 @@ def get_all_timezone_embeds() -> list:
         response = supabase.table("timezone_embeds").select("*").execute()
         return response.data or []
     except Exception as e:
-        print(f"Error fetching timezone embeds: {e}")
+        print(f"Error fetching timezone embeds: {format_supabase_error(e)}")
         return []
 
 
@@ -418,11 +442,12 @@ def get_user_birthday(discord_id: str) -> dict | None:
             return response.data[0]
         return None
     except Exception as e:
-        print(f"Error fetching user birthday: {e}")
+        print(f"Error fetching user birthday: {format_supabase_error(e)}")
         return None
 
 def set_user_birthday(discord_id: str, display_name: str, day: int, month: int) -> bool:
     """Set a user's birthday."""
+    global BIRTHDAYS_CACHE
     try:
         data = {
             "discord_id": str(discord_id),
@@ -431,27 +456,34 @@ def set_user_birthday(discord_id: str, display_name: str, day: int, month: int) 
             "month": month
         }
         supabase.table("user_birthdays").upsert(data).execute()
+        BIRTHDAYS_CACHE = None
         return True
     except Exception as e:
-        print(f"Error setting user birthday: {e}")
+        print(f"Error setting user birthday: {format_supabase_error(e)}")
         return False
 
 def remove_user_birthday(discord_id: str) -> bool:
     """Remove a user's birthday."""
+    global BIRTHDAYS_CACHE
     try:
         supabase.table("user_birthdays").delete().eq("discord_id", str(discord_id)).execute()
+        BIRTHDAYS_CACHE = None
         return True
     except Exception as e:
-        print(f"Error removing user birthday: {e}")
+        print(f"Error removing user birthday: {format_supabase_error(e)}")
         return False
 
 def get_all_user_birthdays() -> list:
     """Get all users with birthdays set."""
+    global BIRTHDAYS_CACHE
+    if BIRTHDAYS_CACHE is not None:
+        return BIRTHDAYS_CACHE
     try:
         response = supabase.table("user_birthdays").select("*").execute()
-        return response.data or []
+        BIRTHDAYS_CACHE = response.data or []
+        return BIRTHDAYS_CACHE
     except Exception as e:
-        print(f"Error fetching all user birthdays: {e}")
+        print(f"Error fetching all user birthdays: {format_supabase_error(e)}")
         return []
 
 
@@ -469,7 +501,7 @@ def save_birthday_embed(guild_id: str, channel_id: str, message_id: str, page: i
         supabase.table("birthday_embeds").upsert(data).execute()
         return True
     except Exception as e:
-        print(f"Error saving birthday embed: {e}")
+        print(f"Error saving birthday embed: {format_supabase_error(e)}")
         return False
 
 def update_birthday_embed_page(guild_id: str, page: int):
@@ -478,7 +510,7 @@ def update_birthday_embed_page(guild_id: str, page: int):
         supabase.table("birthday_embeds").update({"page": page}).eq("guild_id", str(guild_id)).execute()
         return True
     except Exception as e:
-        print(f"Error updating birthday embed page: {e}")
+        print(f"Error updating birthday embed page: {format_supabase_error(e)}")
         return False
 
 def remove_birthday_embed(guild_id: str):
@@ -487,7 +519,7 @@ def remove_birthday_embed(guild_id: str):
         supabase.table("birthday_embeds").delete().eq("guild_id", str(guild_id)).execute()
         return True
     except Exception as e:
-        print(f"Error removing birthday embed: {e}")
+        print(f"Error removing birthday embed: {format_supabase_error(e)}")
         return False
 
 def get_all_birthday_embeds() -> list:
@@ -496,7 +528,7 @@ def get_all_birthday_embeds() -> list:
         response = supabase.table("birthday_embeds").select("*").execute()
         return response.data or []
     except Exception as e:
-        print(f"Error fetching birthday embeds: {e}")
+        print(f"Error fetching birthday embeds: {format_supabase_error(e)}")
         return []
 
 
@@ -504,11 +536,13 @@ def get_all_birthday_embeds() -> list:
 
 def update_birthday_announced(discord_id: str, year: int) -> bool:
     """Mark a user's birthday as announced for the given year."""
+    global BIRTHDAYS_CACHE
     try:
         supabase.table("user_birthdays").update({"last_announced_year": year}).eq("discord_id", str(discord_id)).execute()
+        BIRTHDAYS_CACHE = None
         return True
     except Exception as e:
-        print(f"Error updating birthday announced: {e}")
+        print(f"Error updating birthday announced: {format_supabase_error(e)}")
         return False
 
 def get_birthdays_to_announce(day: int, month: int, year: int) -> list:
@@ -517,7 +551,7 @@ def get_birthdays_to_announce(day: int, month: int, year: int) -> list:
         response = supabase.table("user_birthdays").select("*").eq("day", day).eq("month", month).neq("last_announced_year", year).execute()
         return response.data or []
     except Exception as e:
-        print(f"Error fetching birthdays to announce: {e}")
+        print(f"Error fetching birthdays to announce: {format_supabase_error(e)}")
         return []
 
 
@@ -531,7 +565,7 @@ def get_birthday_channel(guild_id: str) -> str | None:
             return response.data[0]["channel_id"]
         return None
     except Exception as e:
-        print(f"Error fetching birthday channel: {e}")
+        print(f"Error fetching birthday channel: {format_supabase_error(e)}")
         return None
 
 def set_birthday_channel(guild_id: str, channel_id: str) -> bool:
@@ -544,7 +578,7 @@ def set_birthday_channel(guild_id: str, channel_id: str) -> bool:
         supabase.table("birthday_channels").upsert(data).execute()
         return True
     except Exception as e:
-        print(f"Error setting birthday channel: {e}")
+        print(f"Error setting birthday channel: {format_supabase_error(e)}")
         return False
 
 def remove_birthday_channel(guild_id: str) -> bool:
@@ -553,5 +587,5 @@ def remove_birthday_channel(guild_id: str) -> bool:
         supabase.table("birthday_channels").delete().eq("guild_id", str(guild_id)).execute()
         return True
     except Exception as e:
-        print(f"Error removing birthday channel: {e}")
+        print(f"Error removing birthday channel: {format_supabase_error(e)}")
         return False
