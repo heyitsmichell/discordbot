@@ -150,19 +150,19 @@ class Moderation(commands.Cog):
                 await self.warn_user(author, "Inappropriate language.")
                 return
             
-            caps_threshold = float(guild_settings.get("caps_threshold", config.DEFAULT_CAPS_THRESHOLD))
-            if content and len(content) > 10:
-                letters = [c for c in content if c.isalpha()]
-                if letters:
-                    cap_ratio = sum(1 for c in letters if c.isupper()) / max(len(letters), 1)
-                    if cap_ratio > caps_threshold:
-                        try: 
-                            await message.delete()
-                        except: 
-                            pass
-                        await self.warn_user(author, "Too many capital letters.")
-                        return
-            
+            # caps_threshold = float(guild_settings.get("caps_threshold", config.DEFAULT_CAPS_THRESHOLD))
+            # if content and len(content) > 10:
+            #     letters = [c for c in content if c.isalpha()]
+            #     if letters:
+            #         cap_ratio = sum(1 for c in letters if c.isupper()) / max(len(letters), 1)
+            #         if cap_ratio > caps_threshold:
+            #             try: 
+            #                 await message.delete()
+            #             except: 
+            #                 pass
+            #             await self.warn_user(author, "Too many capital letters.")
+            #             return
+
             banned_links = guild_settings.get("banned_links", config.DEFAULT_BANNED_LINKS)
             if any(bad_link in content_lower for bad_link in banned_links):
                 try: 
