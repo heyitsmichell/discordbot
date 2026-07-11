@@ -70,69 +70,95 @@ async def on_ready():
 
 @bot.tree.command(name="help", description="Show all available commands")
 async def bot_help(interaction: discord.Interaction):
-    help_text = (
-        "**Available commands**\n\n"
-
-        "**Public**\n"
-        "/hello – Say hi (Feature will be removed)\n"
-        "/linktwitch – Get Discord OAuth link in DM (viewer linking)\n"
-        "/linktwitchstreamer – Get Twitch OAuth link in DM (streamer linking)\n"
-        "/twitch <member> – Show linked Twitch (shows linked Twitch username)\n"
-        "/unlinktwitch – Unlink your Twitch (Viewer)\n"
-        "/unlinktwitchstreamer <twitch_id> – Unlink a streamer (Administrator)\n"
-        "/gettwid <twitch_username> – Lookup Twitch numeric ID (meant for /subscribeban)\n\n"
-
-        "**Timezone**\n"
-        "/settime <city> <country> – Set your timezone\n"
-        "/mytime – Show your current local time\n"
-        "/time @user – Show another user's local time\n"
-        "/removetime – Remove your timezone setting\n"
-        "/alltimes – Show auto-updating embed with all times\n\n"
-
-        "**Birthday**\n"
-        "/setbirthday <day> <month> – Set your birthday\n"
-        "/mybirthday – Show your birthday\n"
-        "/birthday @user – Show another user's birthday\n"
-        "/removebirthday – Remove your birthday setting\n"
-        "/allbirthdays – Show all upcoming birthdays (Admin)\n"
-        "/setbirthdaychannel #channel – Set birthday announcement channel (Admin)\n\n"
-
-        "**Lookup (Administrator)**\n"
-        "/twitchusers – List all users with linked Twitch account\n"
-        "/youtubeusers – List all users with linked YouTube account\n\n"
-
-        "**Twitch EventSub / Subscription (Administrator / Streamer)**\n"
-        "/subscribeban <twitch_id> – Subscribe this server (via linked streamer) to ban events\n"
-        "/unsubscribeban <subscription_id> – Unsubscribe an EventSub subscription\n"
-        "/listsubs – List active EventSub subscriptions\n\n"
-
-        "**Lockdown / Slowmode (Administrator)**\n"
-        "/lock1 – Set 15s slowmode on all text channels\n"
-        "/lock2 – Set 30s slowmode on all text channels\n"
-        "/lock3 – Set 60s slowmode on all text channels\n"
-        "/unlock – Remove slowmode on all text channels\n\n"
-
-        "**Auto-slowmode (Administrator)**\n"
-        "/autoslow enable|disable|status – Toggle auto-slowmode\n"
-        "/autoslow_blacklist add|remove|list #channel – Manage auto-slowmode blacklist\n"
-        "/set_slowmode_thresholds 50:30,20:15,10:5,0:0 – Configure thresholds\n"
-        "/set_check_frequency <seconds> – How often to evaluate channel message counts\n\n"
-
-        "**Moderation (Administrator)**\n"
-        "/moderation enable|disable\n"
-        "/badword add|remove|list <word>\n"
-        "/bannedlink add|remove|list <link>\n"
-        "/unban <user_id> – Unban a user via their ID\n\n"
-
-        "**Anti-Raid (Administrator)**\n"
-        "/antiraid enable|disable|status – Toggle raid mode\n\n"
-
-        "**Logging (Administrator)**\n"
-        "/setlogchannel #channel – Set global log channel (in-memory or persisted)\n"
-        "/getlogchannel – Show current global log channel\n"
-        "/resetlogchannel – Reset global log channel\n\n"
+    embed = discord.Embed(
+        title="🤖 Multi-Function Discord Bot Commands",
+        description="Here are all available commands organized by category:",
+        color=discord.Color.blurple()
     )
-    await interaction.response.send_message(help_text)
+
+    embed.add_field(
+        name="🌐 Public & Account Linking",
+        value=(
+            "`/linktwitch` – Link your Twitch account\n"
+            "`/linkyoutube` – Link your YouTube account\n"
+            "`/linktwitchstreamer` – Link Twitch (Streamer permissions)\n"
+            "`/twitch <member>` – Show linked Twitch profile\n"
+            "`/youtube <member>` – Show linked YouTube profile\n"
+            "`/unlinktwitch` | `/unlinkyoutube` – Unlink accounts\n"
+            "`/gettwid <username>` – Lookup Twitch numeric ID"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🌍 Timezone",
+        value=(
+            "`/settime <city> <country>` – Set your local timezone\n"
+            "`/mytime` – Show your current local time\n"
+            "`/time @user` – Show another user's local time\n"
+            "`/removetime` – Remove your timezone setting\n"
+            "`/alltimes` – Show auto-updating live times embed"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🎂 Birthday",
+        value=(
+            "`/setbirthday <day> <month>` – Set your birthday\n"
+            "`/mybirthday` | `/birthday @user` – Show saved birthday\n"
+            "`/removebirthday` – Remove your birthday setting\n"
+            "`/allbirthdays` – Show upcoming birthdays embed"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🤖 AI Chat",
+        value=(
+            "`/ask <question>` – Ask the AI assistant a question\n"
+            "`@Bot <message>` – Mention the bot directly to chat"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🛡️ Moderation & Lockdown (Admin)",
+        value=(
+            "`/moderation enable|disable` – Toggle moderation system\n"
+            "`/badword add|remove|list <word>` – Manage word filter\n"
+            "`/bannedlink add|remove|list <link>` – Manage link filter\n"
+            "`/unban <user_id>` – Unban a user by their ID\n"
+            "`/lock1` | `/lock2` | `/lock3` | `/unlock` – Quick channel slowmode"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="⚙️ Auto-Slowmode & Anti-Raid (Admin)",
+        value=(
+            "`/autoslow enable|disable|status` – Toggle auto-slowmode\n"
+            "`/autoslow_blacklist add|remove|list #channel` – Blacklist channel\n"
+            "`/set_slowmode_thresholds <config>` – Configure thresholds\n"
+            "`/set_check_frequency <seconds>` – Set evaluation frequency\n"
+            "`/antiraid enable|disable|status` – Toggle anti-raid mode"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="📡 EventSub & Logging (Admin)",
+        value=(
+            "`/subscribeban <twitch_id>` – Subscribe to Twitch ban events\n"
+            "`/unsubscribeban <sub_id>` | `/listsubs` – Manage subscriptions\n"
+            "`/twitchusers` | `/youtubeusers` – List linked users\n"
+            "`/setlogchannel` | `/getlogchannel` | `/resetlogchannel` – Manage logs"
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="Use /help anytime to view this guide.")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.command()
 async def hello(ctx):
