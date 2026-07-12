@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import time
 import asyncio
@@ -245,6 +246,106 @@ class Moderation(commands.Cog):
             await ctx.send("Banned links: " + ", ".join(links))
         else:
             await ctx.send("Usage: /bannedlink add|remove|list <link>")
+    
+    def _check_mod_perms(self, interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            return False
+        if interaction.user.guild_permissions.administrator:
+            return True
+        user_roles = {role.id for role in interaction.user.roles}
+        return config.ADMIN_ROLE_ID in user_roles or config.MOD_ROLE_ID in user_roles
+
+    # ===================== SLASH COMMANDS =====================
+
+    @app_commands.command(name="moderation", description="Enable or disable the server moderation system")
+    @app_commands.describe(action="Choose whether to enable or disable moderation")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Enable", value="enable"),
+        app_commands.Choice(name="Disable", value="disable")
+    ])
+    async def slash_moderation(self, interaction: discord.Interaction, action: app_commands.Choice[str]):
+        if not self._check_mod_perms(interaction):
+            await interaction.response.send_message("❌ You need Administrator or Moderator permissions.", ephemeral=True)
+            return
+        settings = get_guild_settings(interaction.guild_id)
+        if action.value == "enable":
+            settings["moderation_enabled"] = True
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message("✅ Moderation enabled.")
+        else:
+            settings["moderation_enabled"] = False
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message("❌ Moderation disabled.")
+
+    @app_commands.command(name="badword", description="Manage the server bad words filter list")
+    @app_commands.describe(action="Add, remove, or list bad words", word="The word to add or remove")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Add", value="add"),
+        app_commands.Choice(name="Remove", value="remove"),
+        app_commands.Choice(name="List", value="list")
+    ])
+    async def slash_badword(self, interaction: discord.Interaction, action: app_commands.Choice[str], word: str = None):
+        if not self._check_mod_perms(interaction):
+            await interaction.response.send_message("❌ You need Administrator or Moderator permissions.", ephemeral=True)
+            return
+        settings = get_guild_settings(interaction.guild_id)
+        words = settings.get("bad_words", config.DEFAULT_BAD_WORDS)
+        if action.value == "add":
+            if not word:
+                await interaction.response.send_message("❌ Please specify a word to add.", ephemeral=True)
+                return
+            lw = word.lower()
+            if lw not in words:
+                words.append(lw)
+            settings["bad_words"] = words
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message(f"✅ Added bad word: {word}")
+        elif action.value == "remove":
+            if not word:
+                await interaction.response.send_message("❌ Please specify a word to remove.", ephemeral=True)
+                return
+            if word.lower() in words:
+                words.remove(word.lower())
+            settings["bad_words"] = words
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message(f"❌ Removed bad word: {word}")
+        elif action.value == "list":
+            await interaction.response.send_message("Bad words: " + ", ".join(words))
+
+    @app_commands.command(name="bannedlink", description="Manage the server banned links list")
+    @app_commands.describe(action="Add, remove, or list banned links", link="The link/domain to add or remove")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Add", value="add"),
+        app_commands.Choice(name="Remove", value="remove"),
+        app_commands.Choice(name="List", value="list")
+    ])
+    async def slash_bannedlink(self, interaction: discord.Interaction, action: app_commands.Choice[str], link: str = None):
+        if not self._check_mod_perms(interaction):
+            await interaction.response.send_message("❌ You need Administrator or Moderator permissions.", ephemeral=True)
+            return
+        settings = get_guild_settings(interaction.guild_id)
+        links = settings.get("banned_links", config.DEFAULT_BANNED_LINKS)
+        if action.value == "add":
+            if not link:
+                await interaction.response.send_message("❌ Please specify a link to add.", ephemeral=True)
+                return
+            ll = link.lower()
+            if ll not in links:
+                links.append(ll)
+            settings["banned_links"] = links
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message(f"✅ Added banned link: {link}")
+        elif action.value == "remove":
+            if not link:
+                await interaction.response.send_message("❌ Please specify a link to remove.", ephemeral=True)
+                return
+            if link.lower() in links:
+                links.remove(link.lower())
+            settings["banned_links"] = links
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message(f"❌ Removed banned link: {link}")
+        elif action.value == "list":
+            await interaction.response.send_message("Banned links: " + ", ".join(links))
     
     @commands.command()
     @commands.has_permissions(ban_members=True)

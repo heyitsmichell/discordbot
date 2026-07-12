@@ -1,11 +1,12 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import logging
 import os
 import asyncio
 import threading
 from dotenv import load_dotenv
-from database import init_db, ensure_users_has_twitch_id
+from database import init_db, ensure_users_has_twitch_id, get_guild_settings, save_guild_settings
 from utils.twitch_utils import ban_queue, ban_worker
 from web_server import start_flask_server
 import config

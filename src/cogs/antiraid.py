@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import time
 import datetime
@@ -81,6 +82,40 @@ class AntiRaid(commands.Cog):
             await ctx.send(f"ℹ️ Anti-raid mode is currently {state}.")
         else:
             await ctx.send("Usage: /antiraid enable|disable|status")
+
+    def _check_mod_perms(self, interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            return False
+        if interaction.user.guild_permissions.administrator:
+            return True
+        user_roles = {role.id for role in interaction.user.roles}
+        return config.ADMIN_ROLE_ID in user_roles or config.MOD_ROLE_ID in user_roles
+
+    # ===================== SLASH COMMANDS =====================
+
+    @app_commands.command(name="antiraid", description="Toggle anti-raid mode")
+    @app_commands.describe(action="Enable, disable, or status")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Enable", value="enable"),
+        app_commands.Choice(name="Disable", value="disable"),
+        app_commands.Choice(name="Status", value="status")
+    ])
+    async def slash_antiraid(self, interaction: discord.Interaction, action: app_commands.Choice[str]):
+        if not self._check_mod_perms(interaction):
+            await interaction.response.send_message("❌ You need Administrator or Moderator permissions.", ephemeral=True)
+            return
+        settings = get_guild_settings(interaction.guild_id)
+        if action.value == "enable":
+            settings["antiraid_enabled"] = True
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message("✅ Anti-raid mode enabled. New joins will be auto-timed out.")
+        elif action.value == "disable":
+            settings["antiraid_enabled"] = False
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message("❌ Anti-raid mode disabled.")
+        elif action.value == "status":
+            state = "enabled" if settings.get("antiraid_enabled", False) else "disabled"
+            await interaction.response.send_message(f"ℹ️ Anti-raid mode is currently **{state}**.")
 
 async def setup(bot):
     await bot.add_cog(AntiRaid(bot))

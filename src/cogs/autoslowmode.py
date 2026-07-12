@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import time
 import asyncio
@@ -87,6 +88,77 @@ class AutoSlowmode(commands.Cog):
                 await ctx.send("Blacklisted: " + ", ".join(f"<#{c}>" for c in bl))
         else:
             await ctx.send("Usage: /autoslow_blacklist add|remove|list #channel")
+
+    def _check_mod_perms(self, interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            return False
+        if interaction.user.guild_permissions.administrator:
+            return True
+        user_roles = {role.id for role in interaction.user.roles}
+        return config.ADMIN_ROLE_ID in user_roles or config.MOD_ROLE_ID in user_roles
+
+    # ===================== SLASH COMMANDS =====================
+
+    @app_commands.command(name="autoslow", description="Enable, disable, or check status of auto-slowmode")
+    @app_commands.describe(action="Enable, disable, or status")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Enable", value="enable"),
+        app_commands.Choice(name="Disable", value="disable"),
+        app_commands.Choice(name="Status", value="status")
+    ])
+    async def slash_autoslow(self, interaction: discord.Interaction, action: app_commands.Choice[str]):
+        if not self._check_mod_perms(interaction):
+            await interaction.response.send_message("❌ You need Administrator or Moderator permissions.", ephemeral=True)
+            return
+        settings = get_guild_settings(interaction.guild_id)
+        if action.value == "enable":
+            settings["autoslow_enabled"] = True
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message("✅ Auto-slowmode enabled.")
+        elif action.value == "disable":
+            settings["autoslow_enabled"] = False
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message("❌ Auto-slowmode disabled.")
+        elif action.value == "status":
+            state = "enabled" if settings.get("autoslow_enabled", True) else "disabled"
+            await interaction.response.send_message(f"Auto-slowmode is currently **{state}**.")
+
+    @app_commands.command(name="autoslow_blacklist", description="Manage auto-slowmode channel blacklist")
+    @app_commands.describe(action="Add, remove, or list blacklisted channels", channel="The channel to add or remove")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Add", value="add"),
+        app_commands.Choice(name="Remove", value="remove"),
+        app_commands.Choice(name="List", value="list")
+    ])
+    async def slash_autoslow_blacklist(self, interaction: discord.Interaction, action: app_commands.Choice[str], channel: discord.TextChannel = None):
+        if not self._check_mod_perms(interaction):
+            await interaction.response.send_message("❌ You need Administrator or Moderator permissions.", ephemeral=True)
+            return
+        settings = get_guild_settings(interaction.guild_id)
+        bl = settings.get("blacklisted_channels", [])
+        if action.value == "add":
+            if not channel:
+                await interaction.response.send_message("❌ Please specify a channel to add.", ephemeral=True)
+                return
+            if channel.id not in bl:
+                bl.append(channel.id)
+            settings["blacklisted_channels"] = bl
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message(f"✅ Added {channel.mention} to auto-slowmode blacklist.")
+        elif action.value == "remove":
+            if not channel:
+                await interaction.response.send_message("❌ Please specify a channel to remove.", ephemeral=True)
+                return
+            if channel.id in bl:
+                bl.remove(channel.id)
+            settings["blacklisted_channels"] = bl
+            save_guild_settings(interaction.guild_id, settings)
+            await interaction.response.send_message(f"❌ Removed {channel.mention} from auto-slowmode blacklist.")
+        elif action.value == "list":
+            if not bl:
+                await interaction.response.send_message("Blacklist is empty.")
+            else:
+                await interaction.response.send_message("Blacklisted: " + ", ".join(f"<#{c}>" for c in bl))
     
     @commands.command()
     @role_check(config.ADMIN_ROLE_ID, config.MOD_ROLE_ID)
