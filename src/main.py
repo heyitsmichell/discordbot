@@ -32,8 +32,8 @@ async def load_extensions():
         'cogs.moderation',
         'cogs.autoslowmode',
         'cogs.antiraid',
-        'cogs.twitch',
-        'cogs.youtube',
+        # 'cogs.twitch',
+        # 'cogs.youtube',
         'cogs.lockdown',
         'cogs.admin',
         'cogs.timezone',
@@ -60,14 +60,14 @@ async def on_ready():
     except Exception as e:
         logging.error(f"Failed to sync slash commands: {e}")
     
-    global ban_queue
-    if ban_queue is not None:
-        try:
-            if not getattr(bot, "ban_worker_task", None) or bot.ban_worker_task.done():
-                bot.ban_worker_task = bot.loop.create_task(ban_worker(bot))
-                logging.info("Started ban_worker task.")
-        except Exception as e:
-            logging.exception("Failed to start ban_worker: %s", e)
+    # global ban_queue
+    # if ban_queue is not None:
+    #     try:
+    #         if not getattr(bot, "ban_worker_task", None) or bot.ban_worker_task.done():
+    #             bot.ban_worker_task = bot.loop.create_task(ban_worker(bot))
+    #             logging.info("Started ban_worker task.")
+    #     except Exception as e:
+    #         logging.exception("Failed to start ban_worker: %s", e)
 
 @bot.tree.command(name="help", description="Show all available commands")
 async def bot_help(interaction: discord.Interaction):
@@ -75,20 +75,6 @@ async def bot_help(interaction: discord.Interaction):
         title="🤖 Multi-Function Discord Bot Commands",
         description="Here are all available commands organized by category:",
         color=discord.Color.blurple()
-    )
-
-    embed.add_field(
-        name="🌐 Public & Account Linking",
-        value=(
-            "`/linktwitch` – Link your Twitch account\n"
-            "`/linkyoutube` – Link your YouTube account\n"
-            "`/linktwitchstreamer` – Link Twitch (Streamer permissions)\n"
-            "`/twitch <member>` – Show linked Twitch profile\n"
-            "`/youtube <member>` – Show linked YouTube profile\n"
-            "`/unlinktwitch` | `/unlinkyoutube` – Unlink accounts\n"
-            "`/gettwid <username>` – Lookup Twitch numeric ID"
-        ),
-        inline=False
     )
 
     embed.add_field(
@@ -126,9 +112,9 @@ async def bot_help(interaction: discord.Interaction):
     embed.add_field(
         name="🛡️ Moderation & Lockdown (Admin)",
         value=(
-            "`/moderation enable|disable` – Toggle moderation system\n"
-            "`/badword add|remove|list <word>` – Manage word filter\n"
-            "`/bannedlink add|remove|list <link>` – Manage link filter\n"
+            "`/moderation action:<Enable/Disable>` – Toggle moderation system\n"
+            "`/badword action:<Add/Remove/List> word:<word>` – Manage word filter\n"
+            "`/bannedlink action:<Add/Remove/List> link:<link>` – Manage link filter\n"
             "`/unban <user_id>` – Unban a user by their ID\n"
             "`/lock1` | `/lock2` | `/lock3` | `/unlock` – Quick channel slowmode"
         ),
@@ -138,22 +124,19 @@ async def bot_help(interaction: discord.Interaction):
     embed.add_field(
         name="⚙️ Auto-Slowmode & Anti-Raid (Admin)",
         value=(
-            "`/autoslow enable|disable|status` – Toggle auto-slowmode\n"
-            "`/autoslow_blacklist add|remove|list #channel` – Blacklist channel\n"
+            "`/autoslow action:<Enable/Disable/Status>` – Toggle auto-slowmode\n"
+            "`/autoslow_blacklist action:<Add/Remove/List> channel:<#channel>` – Blacklist channel\n"
             "`/set_slowmode_thresholds <config>` – Configure thresholds\n"
             "`/set_check_frequency <seconds>` – Set evaluation frequency\n"
-            "`/antiraid enable|disable|status` – Toggle anti-raid mode"
+            "`/antiraid action:<Enable/Disable/Status>` – Toggle anti-raid mode"
         ),
         inline=False
     )
 
     embed.add_field(
-        name="📡 EventSub & Logging (Admin)",
+        name="📋 Logging & Audit (Admin)",
         value=(
-            "`/subscribeban <twitch_id>` – Subscribe to Twitch ban events\n"
-            "`/unsubscribeban <sub_id>` | `/listsubs` – Manage subscriptions\n"
-            "`/twitchusers` | `/youtubeusers` – List linked users\n"
-            "`/setlogchannel` | `/getlogchannel` | `/resetlogchannel` – Manage logs"
+            "`/setlogchannel` | `/getlogchannel` | `/resetlogchannel` – Manage server logs"
         ),
         inline=False
     )
