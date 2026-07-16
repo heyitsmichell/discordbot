@@ -48,8 +48,12 @@ async def load_extensions():
         try:
             await bot.load_extension(cog)
             logging.info(f"Loaded {cog}")
+            print(f"✅ Loaded {cog}")
         except Exception as e:
             logging.error(f"Failed to load {cog}: {e}")
+            print(f"❌ Failed to load {cog}: {e}")
+            import traceback
+            traceback.print_exc()
 
 @bot.event
 async def on_ready():
