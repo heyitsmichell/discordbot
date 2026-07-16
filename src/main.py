@@ -142,7 +142,7 @@ def get_help_embed(category: str = "overview") -> discord.Embed:
             value=(
                 "`/join` | `/leave` – Join or leave your voice channel\n"
                 "`/play <song/URL/query> [private:True]` – Play local song, YouTube, or query\n"
-                "`/nowplaying` (`/np`) – Show current song with interactive buttons\n"
+                "`/nowplaying` – Show current song with interactive buttons\n"
                 "`/pause` | `/resume` – Pause or resume music playback\n"
                 "`/skip` | `/stop` – Skip the current track or stop playback\n"
                 "`/volume <1-100>` – Adjust bot audio volume"
@@ -152,8 +152,8 @@ def get_help_embed(category: str = "overview") -> discord.Embed:
         embed.add_field(
             name="📑 Queue & Loop Management",
             value=(
-                "`/queue` (`/q`) – Show upcoming tracks waiting in line\n"
-                "`/shuffle` (`/shuf`) – Randomize all upcoming tracks\n"
+                "`/queue` – Show upcoming tracks waiting in line\n"
+                "`/shuffle` – Randomize all upcoming tracks\n"
                 "`/remove <position>` – Remove a specific song from the queue\n"
                 "`/loop [OFF/TRACK/QUEUE]` – Toggle loop mode for track or full queue"
             ),
