@@ -103,7 +103,19 @@ def get_ffmpeg_path() -> str:
 
 def ensure_opus_loaded():
     if not discord.opus.is_loaded():
+        try:
+            discord.opus._load_default()
+        except Exception:
+            pass
+    if not discord.opus.is_loaded():
+        import ctypes.util
+        found = ctypes.util.find_library('opus')
         for path in [
+            found,
+            '/usr/lib/x86_64-linux-gnu/libopus.so.0',
+            '/usr/lib/aarch64-linux-gnu/libopus.so.0',
+            '/usr/lib64/libopus.so.0',
+            '/lib/x86_64-linux-gnu/libopus.so.0',
             '/opt/homebrew/lib/libopus.dylib',
             '/opt/homebrew/lib/libopus.0.dylib',
             '/usr/local/lib/libopus.dylib',
@@ -113,7 +125,7 @@ def ensure_opus_loaded():
             'libopus.so',
             'opus.dll'
         ]:
-            if os.path.exists(path):
+            if path and (os.path.exists(path) or path in ('libopus.so.0', 'libopus.so', 'opus.dll', found)):
                 try:
                     discord.opus.load_opus(path)
                     logging.info(f"Loaded Opus library from {path}")
@@ -308,8 +320,18 @@ class GuildMusicPlayer:
         if track.get('is_local'):
             source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable)
         else:
+            before_opts = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
+            http_headers = track.get('http_headers')
+            if http_headers and isinstance(http_headers, dict):
+                user_agent = http_headers.get('User-Agent')
+                if user_agent:
+                    before_opts += f' -user_agent "{user_agent}"'
+                headers_str = "".join(f"{k}: {v}\r\n" for k, v in http_headers.items() if k.lower() != 'user-agent')
+                if headers_str:
+                    before_opts += f' -headers "{headers_str}"'
+
             ffmpeg_options = {
-                'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                'before_options': before_opts,
                 'options': '-vn'
             }
             source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
@@ -357,17 +379,37 @@ class GuildMusicPlayer:
         # Check if we need to refresh stream URL (for non-local tracks older than 1 hour or expired URLs)
         if not track_to_play.get('is_local') and yt_dlp:
             try:
-                # Re-extract fresh stream URL if needed
                 loop = asyncio.get_event_loop()
                 ydl_opts = get_ydl_opts()
                 info = await loop.run_in_executor(
                     None,
                     lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(track_to_play['webpage_url'], download=False)
                 )
-                if info and 'url' in info:
-                    track_to_play['source'] = info['url']
+                if not info:
+                    raise ValueError("Empty info returned")
+                entry = info['entries'][0] if 'entries' in info and info['entries'] else info
+                if entry and entry.get('url'):
+                    track_to_play['source'] = entry['url']
+                    if entry.get('http_headers'):
+                        track_to_play['http_headers'] = entry.get('http_headers')
             except Exception as e:
-                logging.warning(f"Could not refresh stream URL for {track_to_play.get('title')}: {e}")
+                logging.warning(f"Could not refresh YouTube stream URL for {track_to_play.get('title')}: {e}. Attempting SoundCloud fallback...")
+                try:
+                    sc_query = f"scsearch1:{track_to_play['title']}"
+                    loop = asyncio.get_event_loop()
+                    ydl_opts = get_ydl_opts()
+                    sc_info = await loop.run_in_executor(
+                        None,
+                        lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(sc_query, download=False)
+                    )
+                    entry = sc_info['entries'][0] if sc_info and 'entries' in sc_info and sc_info['entries'] else sc_info
+                    if entry and entry.get('url'):
+                        track_to_play['source'] = entry['url']
+                        if entry.get('http_headers'):
+                            track_to_play['http_headers'] = entry.get('http_headers')
+                        logging.info(f"Successfully refreshed stream URL from SoundCloud for {track_to_play.get('title')}")
+                except Exception as sc_err:
+                    logging.error(f"SoundCloud refresh also failed: {sc_err}")
 
         try:
             source = self.create_audio_source(track_to_play)
@@ -460,6 +502,8 @@ class Music(commands.Cog):
                 query_params = urllib.parse.parse_qs(parsed.query)
                 if "v" in query_params:
                     fallback_query = query_params["v"][0]
+                elif parsed.hostname in ("youtu.be", "www.youtu.be") and parsed.path:
+                    fallback_query = parsed.path.lstrip('/')
             sc_query = f"scsearch1:{fallback_query}"
             info = await loop.run_in_executor(
                 None,
@@ -481,7 +525,8 @@ class Music(commands.Cog):
                 'duration': entry.get('duration', 0),
                 'uploader_id': str(requester.id),
                 'uploader_name': requester.display_name,
-                'is_local': False
+                'is_local': False,
+                'http_headers': entry.get('http_headers')
             })
         return tracks
 
@@ -852,9 +897,7 @@ class Music(commands.Cog):
             track = tracks_to_add[0]
             if not player.is_playing:
                 await player.play_next()
-                if not ctx.interaction:
-                    # If prefix command and play_next already sent the embed, we don't need double msg unless needed
-                    pass
+                await ctx.send(f"▶️ Starting playback for **{track['title']}**", ephemeral=True if ctx.interaction else False)
             else:
                 embed = discord.Embed(
                     title="➕ Added to Queue",
