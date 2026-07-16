@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import View, Select
 import logging
 import os
 import asyncio
@@ -75,107 +76,230 @@ async def on_ready():
     #     except Exception as e:
     #         logging.exception("Failed to start ban_worker: %s", e)
 
-def get_help_embed() -> discord.Embed:
-    embed = discord.Embed(
-        title="🤖 Multi-Function Discord Bot Commands",
-        description="Here are all available commands organized by category:",
-        color=discord.Color.blurple()
-    )
+class HelpDropdown(discord.ui.Select):
+    def __init__(self, current_category: str = "overview"):
+        options = [
+            discord.SelectOption(
+                label="Overview",
+                value="overview",
+                description="General categories & quick summary",
+                default=(current_category == "overview"),
+                emoji="🏠"
+            ),
+            discord.SelectOption(
+                label="Music & Audio",
+                value="music",
+                description="Playback, Queue, and Song Upload controls",
+                default=(current_category == "music"),
+                emoji="🎵"
+            ),
+            discord.SelectOption(
+                label="Timezone & Birthday",
+                value="time_bday",
+                description="Local time tracking and birthday celebrations",
+                default=(current_category == "time_bday"),
+                emoji="🌍"
+            ),
+            discord.SelectOption(
+                label="Moderation & Slowmode",
+                value="admin",
+                description="Admin tools, Anti-Raid, and Auto-Slowmode",
+                default=(current_category == "admin"),
+                emoji="🛡️"
+            ),
+            discord.SelectOption(
+                label="AI & Utility",
+                value="ai_util",
+                description="AI Assistant, logging, and utilities",
+                default=(current_category == "ai_util"),
+                emoji="🤖"
+            ),
+        ]
+        super().__init__(placeholder="Select a category to view detailed commands...", min_values=1, max_values=1, options=options)
 
-    embed.add_field(
-        name="🌍 Timezone",
-        value=(
-            "`/settime <city> <country>` – Set your local timezone\n"
-            "`/mytime` – Show your current local time\n"
-            "`/time @user` – Show another user's local time\n"
-            "`/removetime` – Remove your timezone setting\n"
-            "`/alltimes` – Show auto-updating live times embed"
-        ),
-        inline=False
-    )
+    async def callback(self, interaction: discord.Interaction):
+        selected = self.values[0]
+        embed = get_help_embed(selected)
+        view = HelpView(selected)
+        await interaction.response.edit_message(embed=embed, view=view)
 
-    embed.add_field(
-        name="🎂 Birthday",
-        value=(
-            "`/setbirthday <day> <month>` – Set your birthday\n"
-            "`/mybirthday` | `/birthday @user` – Show saved birthday\n"
-            "`/removebirthday` – Remove your birthday setting\n"
-            "`/allbirthdays` – Show upcoming birthdays embed"
-        ),
-        inline=False
-    )
 
-    embed.add_field(
-        name="🤖 AI Chat",
-        value=(
-            "`/ask <question>` – Ask the AI assistant a question\n"
-            "`@Bot <message>` – Mention the bot directly to chat"
-        ),
-        inline=False
-    )
+class HelpView(discord.ui.View):
+    def __init__(self, current_category: str = "overview"):
+        super().__init__(timeout=300)
+        self.add_item(HelpDropdown(current_category))
 
-    embed.add_field(
-        name="🎵 Music & Audio",
-        value=(
-            "`/join` | `/leave` – Join or leave your voice channel\n"
-            "`/play <song/URL/query> [private:True]` – Play local song, YouTube link, or query\n"
-            "`/uploadmusic <file> [title] [private:True]` – Upload music file (`.mp3`, etc.)\n"
-            "`/listmusic [private_only:True]` – Browse available or private uploaded songs\n"
-            "`/toggleprivacy <id_or_title>` – Toggle a track between Public and Private\n"
-            "`/deletemusic <id>` – Delete your uploaded song\n"
-            "`/nowplaying` (`/np`) – Show current song with interactive controls\n"
-            "`/queue` (`/q`) – Show upcoming songs waiting in line\n"
-            "`/shuffle` (`/shuf`) | `/remove <position>` – Shuffle queue or remove a specific track\n"
-            "`/pause` | `/resume` – Pause or continue music playback\n"
-            "`/skip` | `/stop` – Skip current track or stop playing\n"
-            "`/loop [OFF/TRACK/QUEUE]` – Toggle loop mode\n"
-            "`/volume <1-100>` – Adjust playback volume"
-        ),
-        inline=False
-    )
 
-    embed.add_field(
-        name="🛡️ Moderation & Lockdown (Admin)",
-        value=(
-            "`/moderation action:<Enable/Disable>` – Toggle moderation system\n"
-            "`/badword action:<Add/Remove/List> word:<word>` – Manage word filter\n"
-            "`/bannedlink action:<Add/Remove/List> link:<link>` – Manage link filter\n"
-            "`/unban <user_id>` – Unban a user by their ID\n"
-            "`/lock1` | `/lock2` | `/lock3` | `/unlock` – Quick channel slowmode"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="⚙️ Auto-Slowmode & Anti-Raid (Admin)",
-        value=(
-            "`/autoslow action:<Enable/Disable/Status>` – Toggle auto-slowmode\n"
-            "`/autoslow_blacklist action:<Add/Remove/List> channel:<#channel>` – Blacklist channel\n"
-            "`/set_slowmode_thresholds <config>` – Configure thresholds\n"
-            "`/set_check_frequency <seconds>` – Set evaluation frequency\n"
-            "`/antiraid action:<Enable/Disable/Status>` – Toggle anti-raid mode"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="📋 Logging & Audit (Admin)",
-        value=(
-            "`/setlogchannel` | `/getlogchannel` | `/resetlogchannel` – Manage server logs"
-        ),
-        inline=False
-    )
-
-    embed.set_footer(text="Use /help anytime to view this guide.")
+def get_help_embed(category: str = "overview") -> discord.Embed:
+    if category == "music":
+        embed = discord.Embed(
+            title="🎵 Music & Audio Guide",
+            description="High-fidelity Pure Opus audio playback, custom library uploads, and queue management.\nSelect a category from the dropdown below to explore other commands!",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="▶️ Playback & Voice Controls",
+            value=(
+                "`/join` | `/leave` – Join or leave your voice channel\n"
+                "`/play <song/URL/query> [private:True]` – Play local song, YouTube, or query\n"
+                "`/nowplaying` (`/np`) – Show current song with interactive buttons\n"
+                "`/pause` | `/resume` – Pause or resume music playback\n"
+                "`/skip` | `/stop` – Skip the current track or stop playback\n"
+                "`/volume <1-100>` – Adjust bot audio volume"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="📑 Queue & Loop Management",
+            value=(
+                "`/queue` (`/q`) – Show upcoming tracks waiting in line\n"
+                "`/shuffle` (`/shuf`) – Randomize all upcoming tracks\n"
+                "`/remove <position>` – Remove a specific song from the queue\n"
+                "`/loop [OFF/TRACK/QUEUE]` – Toggle loop mode for track or full queue"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="📂 Custom Song Uploads & Library",
+            value=(
+                "`/uploadmusic <attachment> [title] [private:True]` – Upload your own audio file (`.mp3`, `.wav`, `.flac`, `.ogg`)\n"
+                "`/renamemusic <id_or_title> <new_title>` – Rename any song in the library\n"
+                "`/listmusic [private_only:True]` – Browse available public or your private songs\n"
+                "`/toggleprivacy <id_or_title>` – Toggle your track between Public and Private\n"
+                "`/deletemusic <id_or_title>` – Permanently delete your uploaded track"
+            ),
+            inline=False
+        )
+    elif category == "time_bday":
+        embed = discord.Embed(
+            title="🌍 Timezone & Birthday Guide",
+            description="Track local times and celebrate member birthdays automatically.\nSelect a category from the dropdown below to switch views!",
+            color=discord.Color.gold()
+        )
+        embed.add_field(
+            name="🌍 Timezone Commands",
+            value=(
+                "`/settime <city> <country>` – Set your local timezone\n"
+                "`/mytime` – Show your current local time\n"
+                "`/time @user` – Show another user's local time\n"
+                "`/removetime` – Remove your timezone setting\n"
+                "`/alltimes` – Show auto-updating live times embed"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="🎂 Birthday Commands",
+            value=(
+                "`/setbirthday <day> <month>` – Set your birthday\n"
+                "`/mybirthday` | `/birthday @user` – Show saved birthday\n"
+                "`/removebirthday` – Remove your birthday setting\n"
+                "`/allbirthdays` – Show upcoming birthdays embed"
+            ),
+            inline=False
+        )
+    elif category == "admin":
+        embed = discord.Embed(
+            title="🛡️ Moderation & Lockdown Guide (Admin)",
+            description="Automated profanity/link filtering, anti-raid protection, and quick lockdowns.\nSelect a category from the dropdown below to switch views!",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="🛡️ Moderation & Filter",
+            value=(
+                "`/moderation action:<Enable/Disable>` – Toggle chat moderation system\n"
+                "`/badword action:<Add/Remove/List> word:<word>` – Manage word filter\n"
+                "`/bannedlink action:<Add/Remove/List> link:<link>` – Manage link filter\n"
+                "`/unban <user_id>` – Unban a user by their Discord ID"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="🔒 Quick Channel Lockdown",
+            value=(
+                "`/lock1` (10s) | `/lock2` (30s) | `/lock3` (60s) – Apply channel slowmode\n"
+                "`/unlock` – Remove slowmode and restore normal chat speed"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="⚙️ Auto-Slowmode & Anti-Raid",
+            value=(
+                "`/autoslow action:<Enable/Disable/Status>` – Toggle dynamic slowmode\n"
+                "`/autoslow_blacklist action:<Add/Remove/List> channel:<#channel>` – Blacklist channel\n"
+                "`/set_slowmode_thresholds <config>` – Configure traffic thresholds\n"
+                "`/set_check_frequency <seconds>` – Set evaluation interval\n"
+                "`/antiraid action:<Enable/Disable/Status>` – Toggle anti-raid emergency mode"
+            ),
+            inline=False
+        )
+    elif category == "ai_util":
+        embed = discord.Embed(
+            title="🤖 AI Assistant & Utility Guide",
+            description="Gemini AI chat assistant, server logging, and basic bot utilities.\nSelect a category from the dropdown below to switch views!",
+            color=discord.Color.blurple()
+        )
+        embed.add_field(
+            name="🤖 AI Chat Assistant",
+            value=(
+                "`/ask <question>` – Ask the AI assistant any question\n"
+                "`@Bot <message>` – Mention the bot directly in chat to converse naturally"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="📋 Server Logging & Audit (Admin)",
+            value=(
+                "`/setlogchannel` – Set the channel for bot audit & moderation logs\n"
+                "`/getlogchannel` – Check current configured log channel\n"
+                "`/resetlogchannel` – Clear and disable server log output"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="🔧 Utility Commands",
+            value=(
+                "`/hello` | `!hello` – Test if bot is responding and get a greeting\n"
+                "`/help` | `!help` – Open this interactive command guide"
+            ),
+            inline=False
+        )
+    else:
+        # Overview (Default)
+        embed = discord.Embed(
+            title="🤖 Multi-Function Discord Bot Commands",
+            description="Welcome! Use the **interactive dropdown menu below** to browse commands cleanly by category:",
+            color=discord.Color.blurple()
+        )
+        embed.add_field(
+            name="🎵 Music & Audio",
+            value="High-fidelity Opus audio, `/play`, `/queue`, and custom `/uploadmusic` library.\n👉 **Select `🎵 Music & Audio` below for all 15+ music commands!**",
+            inline=False
+        )
+        embed.add_field(
+            name="🌍 Timezone & Birthday",
+            value="Track live world times (`/alltimes`) and celebrate member birthdays (`/allbirthdays`).\n👉 **Select `🌍 Timezone & Birthday` below for details!**",
+            inline=False
+        )
+        embed.add_field(
+            name="🛡️ Moderation & Slowmode",
+            value="Automated filters (`/badword`, `/bannedlink`), quick lockdowns (`/lock1`), and Anti-Raid.\n👉 **Select `🛡️ Moderation & Slowmode` below for Admin guide!**",
+            inline=False
+        )
+        embed.add_field(
+            name="🤖 AI & Utility",
+            value="Ask questions with `/ask` or `@Bot`, and configure server logging (`/setlogchannel`).\n👉 **Select `🤖 AI & Utility` below for more!**",
+            inline=False
+        )
+    embed.set_footer(text="Use the dropdown select menu below to switch categories anytime.")
     return embed
 
 @bot.tree.command(name="help", description="Show all available commands")
 async def bot_help(interaction: discord.Interaction):
-    await interaction.response.send_message(embed=get_help_embed(), ephemeral=True)
+    await interaction.response.send_message(embed=get_help_embed("overview"), view=HelpView("overview"), ephemeral=True)
 
 @bot.command(name="help")
 async def prefix_help(ctx: commands.Context):
-    await ctx.send(embed=get_help_embed())
+    await ctx.send(embed=get_help_embed("overview"), view=HelpView("overview"))
 
 @bot.command()
 async def hello(ctx):
