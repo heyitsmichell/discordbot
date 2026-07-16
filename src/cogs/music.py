@@ -450,41 +450,6 @@ class GuildMusicPlayer:
             await self.play_next()
 
 
-class Music(commands.Cog):
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-        self.players: dict[int, GuildMusicPlayer] = {}
-
-    def get_player(self, guild: discord.Guild) -> GuildMusicPlayer:
-        if guild.id not in self.players:
-            self.players[guild.id] = GuildMusicPlayer(self.bot, guild.id)
-        return self.players[guild.id]
-
-    @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-        # If the bot itself was forcibly disconnected from voice by a moderator or server event
-        if member.id == self.bot.user.id:
-            if before.channel and not after.channel:
-                if before.channel.guild.id in self.players:
-                    player = self.players[before.channel.guild.id]
-                    await player.disconnect()
-            return
-
-        # If a user left the channel the bot is currently inside
-        if before.channel and member.id != self.bot.user.id:
-            if before.channel.guild.id in self.players:
-                player = self.players[before.channel.guild.id]
-                if player.voice_client and player.voice_client.channel and player.voice_client.channel.id == before.channel.id:
-                    # Check if only bots remain in the channel
-                    non_bots = [m for m in before.channel.members if not m.bot]
-                    if len(non_bots) == 0:
-                        if player.channel_for_updates:
-                            try:
-                                await player.channel_for_updates.send("💤 All users left the voice channel. Disconnecting to save resources.")
-                            except Exception:
-                                pass
-                        await player.disconnect()
-
 def fetch_spotify_queries(query: str) -> list[str]:
     """Extract clean search strings (Song Title + Artist) from a Spotify URL."""
     queries = []
@@ -548,6 +513,40 @@ def fetch_spotify_queries(query: str) -> list[str]:
     return queries
 
 
+class Music(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.players: dict[int, GuildMusicPlayer] = {}
+
+    def get_player(self, guild: discord.Guild) -> GuildMusicPlayer:
+        if guild.id not in self.players:
+            self.players[guild.id] = GuildMusicPlayer(self.bot, guild.id)
+        return self.players[guild.id]
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        # If the bot itself was forcibly disconnected from voice by a moderator or server event
+        if member.id == self.bot.user.id:
+            if before.channel and not after.channel:
+                if before.channel.guild.id in self.players:
+                    player = self.players[before.channel.guild.id]
+                    await player.disconnect()
+            return
+
+        # If a user left the channel the bot is currently inside
+        if before.channel and member.id != self.bot.user.id:
+            if before.channel.guild.id in self.players:
+                player = self.players[before.channel.guild.id]
+                if player.voice_client and player.voice_client.channel and player.voice_client.channel.id == before.channel.id:
+                    # Check if only bots remain in the channel
+                    non_bots = [m for m in before.channel.members if not m.bot]
+                    if len(non_bots) == 0:
+                        if player.channel_for_updates:
+                            try:
+                                await player.channel_for_updates.send("💤 All users left the voice channel. Disconnecting to save resources.")
+                            except Exception:
+                                pass
+                        await player.disconnect()
     async def extract_web_track(self, query: str, requester: discord.Member) -> list[dict]:
         if not yt_dlp:
             raise RuntimeError("yt-dlp is not installed or available on this bot.")
