@@ -136,7 +136,10 @@ def ensure_opus_loaded():
                 except Exception as e:
                     logging.warning(f"Failed to load Opus from {path}: {e}")
 
-ensure_opus_loaded()
+try:
+    ensure_opus_loaded()
+except Exception as e:
+    logging.warning(f"Could not load Opus at startup (voice may not work): {e}")
 
 
 def get_ydl_opts(extract_flat: bool = False) -> dict:
@@ -147,9 +150,11 @@ def get_ydl_opts(extract_flat: bool = False) -> dict:
         'no_warnings': True,
         'default_search': 'auto',
         'extract_flat': extract_flat,
+        'js_runtimes': {'deno': {'path': None}, 'node': {'path': None}},
+        'remote_components': ['ejs:github'],
         'extractor_args': {
             'youtube': {
-                'player_client': ['mweb', 'android', 'ios']
+                'player_client': ['web', 'android', 'ios', 'mweb', 'tv']
             }
         }
     }
