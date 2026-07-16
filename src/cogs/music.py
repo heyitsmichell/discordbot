@@ -84,14 +84,20 @@ def get_ffmpeg_path() -> str:
     if imageio_ffmpeg:
         try:
             exe = imageio_ffmpeg.get_ffmpeg_exe()
-            if exe and os.path.exists(exe):
+            if exe and os.path.exists(exe) and os.access(exe, os.X_OK):
                 return exe
         except Exception as e:
             logging.warning(f"Could not load bundled ffmpeg from imageio_ffmpeg: {e}")
 
-    for path in ['/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg', 'ffmpeg']:
-        if os.path.exists(path) or path == 'ffmpeg':
+    import shutil
+    for path in ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+        if os.path.exists(path) and os.access(path, os.X_OK):
             return path
+
+    which_ffmpeg = shutil.which('ffmpeg')
+    if which_ffmpeg and os.access(which_ffmpeg, os.X_OK):
+        return which_ffmpeg
+
     return 'ffmpeg'
 
 
@@ -123,11 +129,12 @@ def get_ydl_opts(extract_flat: bool = False) -> dict:
         'format': 'bestaudio/best',
         'noplaylist': True,
         'quiet': True,
+        'no_warnings': True,
         'default_search': 'auto',
         'extract_flat': extract_flat,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'web']
+                'player_client': ['mweb', 'android', 'ios']
             }
         }
     }
@@ -446,15 +453,18 @@ class Music(commands.Cog):
                 lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(search_query, download=False)
             )
         except Exception as e:
-            if not is_url:
-                logging.warning(f"YouTube search failed or required sign-in for '{query}' ({e}). Falling back to SoundCloud...")
-                sc_query = f"scsearch1:{query}"
-                info = await loop.run_in_executor(
-                    None,
-                    lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(sc_query, download=False)
-                )
-            else:
-                raise e
+            logging.warning(f"YouTube extraction failed for '{query}' ({e}). Attempting SoundCloud fallback...")
+            fallback_query = query
+            if is_url and ("youtube.com" in query or "youtu.be" in query):
+                parsed = urllib.parse.urlparse(query)
+                query_params = urllib.parse.parse_qs(parsed.query)
+                if "v" in query_params:
+                    fallback_query = query_params["v"][0]
+            sc_query = f"scsearch1:{fallback_query}"
+            info = await loop.run_in_executor(
+                None,
+                lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(sc_query, download=False)
+            )
 
         if not info:
             return []
