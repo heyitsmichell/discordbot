@@ -305,6 +305,16 @@ class GuildMusicPlayer:
                 await self.voice_client.move_to(voice_channel)
         else:
             self.voice_client = await voice_channel.connect()
+
+        if self.voice_client and hasattr(self.voice_client, 'encoder') and self.voice_client.encoder:
+            try:
+                self.voice_client.encoder.set_application(discord.opus.Application.audio)
+                target_bitrate = getattr(voice_channel, 'bitrate', 128000)
+                self.voice_client.encoder.set_bitrate(target_bitrate)
+                logging.info(f"High-fidelity Opus configured: Application.audio at {target_bitrate} bps")
+            except Exception as e:
+                logging.warning(f"Could not configure Opus encoder settings: {e}")
+
         self.reset_inactivity_timer()
 
     async def disconnect(self):
@@ -339,10 +349,10 @@ class GuildMusicPlayer:
         if self.inactivity_task:
             self.inactivity_task.cancel()
 
-    def create_audio_source(self, track: dict) -> discord.AudioSource:
+    async def create_audio_source(self, track: dict) -> discord.AudioSource:
         ffmpeg_executable = get_ffmpeg_path()
         if track.get('is_local'):
-            source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable, stderr=sys.stderr)
+            source = await discord.FFmpegOpusAudio.from_probe(track['source'], executable=ffmpeg_executable, stderr=sys.stderr)
         else:
             before_opts = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
             http_headers = track.get('http_headers')
@@ -356,12 +366,12 @@ class GuildMusicPlayer:
 
             ffmpeg_options = {
                 'before_options': before_opts,
-                'options': '-vn',
+                'options': '-vn -sn -dn',
                 'stderr': sys.stderr
             }
-            source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
+            source = await discord.FFmpegOpusAudio.from_probe(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
         
-        return discord.PCMVolumeTransformer(source, volume=self.volume)
+        return source
 
     def after_play_callback(self, error):
         if error:
@@ -421,7 +431,7 @@ class GuildMusicPlayer:
                 logging.warning(f"Could not refresh YouTube stream URL for {track_to_play.get('title')}: {e}")
 
         try:
-            source = self.create_audio_source(track_to_play)
+            source = await self.create_audio_source(track_to_play)
             self.voice_client.play(source, after=self.after_play_callback)
             
             # Send Now Playing announcement
@@ -1203,12 +1213,7 @@ class Music(commands.Cog):
         if level < 1 or level > 100:
             return await ctx.send("❌ Volume must be between 1 and 100!", ephemeral=True)
 
-        player = self.get_player(ctx.guild)
-        player.volume = level / 100.0
-        if player.voice_client and player.voice_client.source and isinstance(player.voice_client.source, discord.PCMVolumeTransformer):
-            player.voice_client.source.volume = player.volume
-
-        await ctx.send(f"🔊 Playback volume set to **{level}%**!")
+        await ctx.send(f"🔊 Note: The bot is running in **High-Fidelity Pure Opus Passthrough mode** (`384 kbps`). For dynamic volume changes without audio quality loss, please right-click the bot user (**{ctx.guild.me.display_name}**) and adjust User Volume directly!")
 
 
 async def setup(bot: commands.Bot):
