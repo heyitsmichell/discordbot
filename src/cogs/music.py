@@ -9,6 +9,9 @@ import time
 import random
 import logging
 import urllib.parse
+import urllib.request
+import re
+import concurrent.futures
 from datetime import timedelta
 import database
 
@@ -393,23 +396,7 @@ class GuildMusicPlayer:
                     if entry.get('http_headers'):
                         track_to_play['http_headers'] = entry.get('http_headers')
             except Exception as e:
-                logging.warning(f"Could not refresh YouTube stream URL for {track_to_play.get('title')}: {e}. Attempting SoundCloud fallback...")
-                try:
-                    sc_query = f"scsearch1:{track_to_play['title']}"
-                    loop = asyncio.get_event_loop()
-                    ydl_opts = get_ydl_opts()
-                    sc_info = await loop.run_in_executor(
-                        None,
-                        lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(sc_query, download=False)
-                    )
-                    entry = sc_info['entries'][0] if sc_info and 'entries' in sc_info and sc_info['entries'] else sc_info
-                    if entry and entry.get('url'):
-                        track_to_play['source'] = entry['url']
-                        if entry.get('http_headers'):
-                            track_to_play['http_headers'] = entry.get('http_headers')
-                        logging.info(f"Successfully refreshed stream URL from SoundCloud for {track_to_play.get('title')}")
-                except Exception as sc_err:
-                    logging.error(f"SoundCloud refresh also failed: {sc_err}")
+                logging.warning(f"Could not refresh YouTube stream URL for {track_to_play.get('title')}: {e}")
 
         try:
             source = self.create_audio_source(track_to_play)
@@ -479,6 +466,69 @@ class Music(commands.Cog):
                                 pass
                         await player.disconnect()
 
+def fetch_spotify_queries(query: str) -> list[str]:
+    """Extract clean search strings (Song Title + Artist) from a Spotify URL."""
+    queries = []
+    try:
+        req = urllib.request.Request(
+            query,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode('utf-8', errors='ignore')
+
+        if "/track/" in query:
+            i = html.find('<title>')
+            j = html.find('</title>', i)
+            if i != -1 and j != -1:
+                html_title = html[i+7:j].strip().replace(' | Spotify', '').replace(' - song and lyrics by ', ' - ').replace(' - Song by ', ' - ')
+                if html_title and "Spotify" not in html_title:
+                    return [html_title]
+
+            try:
+                oembed_url = f"https://open.spotify.com/oembed?url={urllib.parse.quote(query)}"
+                with urllib.request.urlopen(urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0'}), timeout=5) as oresp:
+                    otitle = json.loads(oresp.read().decode()).get("title")
+                    if otitle:
+                        return [otitle]
+            except Exception:
+                pass
+
+        elif "/playlist/" in query or "/album/" in query:
+            track_ids = []
+            for tid in re.findall(r'https://open\.spotify\.com/track/([a-zA-Z0-9]{22})', html):
+                if tid not in track_ids:
+                    track_ids.append(tid)
+
+            if not track_ids:
+                try:
+                    oembed_url = f"https://open.spotify.com/oembed?url={urllib.parse.quote(query)}"
+                    with urllib.request.urlopen(urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0'}), timeout=5) as oresp:
+                        otitle = json.loads(oresp.read().decode()).get("title")
+                        if otitle:
+                            return [otitle]
+                except Exception:
+                    pass
+                return []
+
+            def get_otitle(tid):
+                try:
+                    oembed_url = f"https://open.spotify.com/oembed?url=https://open.spotify.com/track/{tid}"
+                    with urllib.request.urlopen(urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0'}), timeout=5) as oresp:
+                        return json.loads(oresp.read().decode()).get("title")
+                except Exception:
+                    return None
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                results = list(executor.map(get_otitle, track_ids[:15]))
+
+            queries = [r for r in results if r]
+    except Exception as e:
+        logging.warning(f"Failed to fetch Spotify metadata for '{query}': {e}")
+
+    return queries
+
+
     async def extract_web_track(self, query: str, requester: discord.Member) -> list[dict]:
         if not yt_dlp:
             raise RuntimeError("yt-dlp is not installed or available on this bot.")
@@ -487,6 +537,42 @@ class Music(commands.Cog):
         ydl_opts = get_ydl_opts()
 
         is_url = query.startswith("http://") or query.startswith("https://")
+
+        # Check for Spotify links and bridge via YouTube search
+        if is_url and "spotify.com/" in query:
+            spotify_queries = await loop.run_in_executor(None, lambda: fetch_spotify_queries(query))
+            if not spotify_queries:
+                raise RuntimeError("Could not extract track metadata from that Spotify link.")
+
+            all_tracks = []
+            for sq in spotify_queries:
+                try:
+                    info = await loop.run_in_executor(
+                        None,
+                        lambda sq=sq: yt_dlp.YoutubeDL(ydl_opts).extract_info(f"ytsearch1:{sq}", download=False)
+                    )
+                    if info:
+                        entries = info.get('entries', [info]) if 'entries' in info else [info]
+                        for entry in entries:
+                            if not entry:
+                                continue
+                            all_tracks.append({
+                                'title': entry.get('title', sq),
+                                'source': entry.get('url'),
+                                'webpage_url': entry.get('webpage_url', f"https://www.youtube.com/results?search_query={urllib.parse.quote(sq)}"),
+                                'duration': entry.get('duration', 0),
+                                'uploader_id': str(requester.id),
+                                'uploader_name': requester.display_name,
+                                'is_local': False,
+                                'http_headers': entry.get('http_headers')
+                            })
+                except Exception as yt_err:
+                    logging.warning(f"Failed to bridge Spotify song '{sq}' to YouTube: {yt_err}")
+
+            if not all_tracks:
+                raise RuntimeError(f"Could not find matching YouTube audio for Spotify link: {query}")
+            return all_tracks
+
         search_query = query if is_url else f"ytsearch1:{query}"
 
         try:
@@ -495,20 +581,8 @@ class Music(commands.Cog):
                 lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(search_query, download=False)
             )
         except Exception as e:
-            logging.warning(f"YouTube extraction failed for '{query}' ({e}). Attempting SoundCloud fallback...")
-            fallback_query = query
-            if is_url and ("youtube.com" in query or "youtu.be" in query):
-                parsed = urllib.parse.urlparse(query)
-                query_params = urllib.parse.parse_qs(parsed.query)
-                if "v" in query_params:
-                    fallback_query = query_params["v"][0]
-                elif parsed.hostname in ("youtu.be", "www.youtu.be") and parsed.path:
-                    fallback_query = parsed.path.lstrip('/')
-            sc_query = f"scsearch1:{fallback_query}"
-            info = await loop.run_in_executor(
-                None,
-                lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(sc_query, download=False)
-            )
+            logging.error(f"YouTube extraction failed for '{query}': {e}")
+            raise e
 
         if not info:
             return []
