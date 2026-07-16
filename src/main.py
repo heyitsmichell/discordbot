@@ -39,7 +39,8 @@ async def load_extensions():
         'cogs.timezone',
         # 'cogs.fun',
         'cogs.birthday',
-        'cogs.ai'
+        'cogs.ai',
+        'cogs.music'
         # 'cogs.autoban'
     ]
     
@@ -69,8 +70,7 @@ async def on_ready():
     #     except Exception as e:
     #         logging.exception("Failed to start ban_worker: %s", e)
 
-@bot.tree.command(name="help", description="Show all available commands")
-async def bot_help(interaction: discord.Interaction):
+def get_help_embed() -> discord.Embed:
     embed = discord.Embed(
         title="🤖 Multi-Function Discord Bot Commands",
         description="Here are all available commands organized by category:",
@@ -110,6 +110,23 @@ async def bot_help(interaction: discord.Interaction):
     )
 
     embed.add_field(
+        name="🎵 Music & Audio",
+        value=(
+            "`/join` | `/leave` – Join or leave your voice channel\n"
+            "`/play <song/URL/query>` – Play uploaded song, YouTube link, or query\n"
+            "`/uploadmusic <file> [title]` – Upload your own music file (`.mp3`, etc.)\n"
+            "`/listmusic` | `/deletemusic <id>` – Browse or delete uploaded songs\n"
+            "`/nowplaying` (`/np`) – Show current song with interactive controls\n"
+            "`/queue` (`/q`) – Show upcoming songs waiting in line\n"
+            "`/pause` | `/resume` – Pause or continue music playback\n"
+            "`/skip` | `/stop` – Skip current track or stop playing\n"
+            "`/loop [OFF/TRACK/QUEUE]` – Toggle loop mode\n"
+            "`/volume <1-100>` – Adjust playback volume"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
         name="🛡️ Moderation & Lockdown (Admin)",
         value=(
             "`/moderation action:<Enable/Disable>` – Toggle moderation system\n"
@@ -142,7 +159,15 @@ async def bot_help(interaction: discord.Interaction):
     )
 
     embed.set_footer(text="Use /help anytime to view this guide.")
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    return embed
+
+@bot.tree.command(name="help", description="Show all available commands")
+async def bot_help(interaction: discord.Interaction):
+    await interaction.response.send_message(embed=get_help_embed(), ephemeral=True)
+
+@bot.command(name="help")
+async def prefix_help(ctx: commands.Context):
+    await ctx.send(embed=get_help_embed())
 
 @bot.command()
 async def hello(ctx):

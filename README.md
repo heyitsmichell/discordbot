@@ -14,6 +14,7 @@ A Discord bot with moderation, auto-slowmode, Twitch/YouTube integration, and an
 - **Birthday Tracking**: Track and announce member birthdays with auto-updating embeds
 - **Fun Reactions**: Auto-react to specific users' messages
 - **AI Chat**: Gemini-powered AI responses with server emote support
+- **Music & Audio System**: Upload local music files, stream YouTube songs (`yt-dlp`), manage queues, and interact via rich UI buttons
 
 ## Prerequisites
 
@@ -22,6 +23,7 @@ A Discord bot with moderation, auto-slowmode, Twitch/YouTube integration, and an
 - Discord (for OAuth)
 - Twitch
 - Supabase
+- FFmpeg (installed and accessible via PATH or `/usr/local/bin/ffmpeg`)
 
 ## Installation
 
@@ -33,7 +35,7 @@ cd discordbot
 
 2. Install dependencies:
 ```bash
-pip install discord.py flask requests aiohttp python-dotenv
+pip install discord.py flask requests aiohttp python-dotenv PyNaCl yt-dlp
 ```
 
 3. Create a `.env` file with the following variables:
@@ -126,9 +128,27 @@ python main.py
 
 ### AI Commands
 |  Command   |           Description           |       Usage        |
-|------------|--------------------------------|--------------------||
+|------------|--------------------------------|--------------------|
 |  `/ask`    | Ask the AI a question          | `/ask <question>`  |
 | `@Bot`     | Mention the bot to chat        | `@Bot hello!`      |
+
+### Music Commands
+|     Command     |               Description               |             Usage              |
+|-----------------|-----------------------------------------|--------------------------------|
+| `/join`         | Join your current voice channel         | `/join`                        |
+| `/leave`        | Leave voice channel & clear queue       | `/leave`                       |
+| `/uploadmusic`  | Upload local music file (`.mp3`, etc.)  | `/uploadmusic <file> [title]`  |
+| `/listmusic`    | Show all uploaded tracks in library     | `/listmusic`                   |
+| `/deletemusic`  | Delete an uploaded track by ID or title | `/deletemusic <id_or_title>`   |
+| `/play`         | Play local track, YouTube URL, or query | `/play <song/URL/query>`       |
+| `/nowplaying`   | Show current song with UI controls      | `/nowplaying`                  |
+| `/queue`        | Show current music queue                | `/queue`                       |
+| `/pause`        | Pause current music playback            | `/pause`                       |
+| `/resume`       | Resume paused music playback            | `/resume`                      |
+| `/skip`         | Skip the currently playing song         | `/skip`                        |
+| `/stop`         | Stop playback and clear queue           | `/stop`                        |
+| `/loop`         | Toggle loop mode (OFF, TRACK, QUEUE)    | `/loop [mode]`                 |
+| `/volume`       | Adjust playback volume (1-100%)         | `/volume <level>`              |
 
 ### Administrator Commands
 
@@ -238,6 +258,13 @@ Automatically adjusts channel slowmode based on message activity:
 - **Auto-Reactions**: Automatically adds 🐐 and 🔥 reactions to specified user's messages
 - **Owner Reactions**: Adds 🩷 reaction to bot owner's messages
 - **Reaction Protection**: Removes 🐐/🔥 reactions from protected user's messages
+
+### Music & Audio System
+
+- **Local Music Uploads**: Users can upload audio files (`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`) directly to the bot (`/uploadmusic`), storing them locally in `src/data/music/files/` and indexing them in `library.json`.
+- **YouTube & Search Support**: Powered by `yt-dlp`, users can stream audio directly from YouTube URLs or search queries (`/play lofi hip hop`).
+- **Interactive Playback UI**: The `/nowplaying` command sends a rich embed with clickable buttons (`⏸️ Pause/Resume`, `⏭️ Skip`, `🔂 Loop`, `⏹️ Stop`).
+- **Queue & Loop Management**: Full playlist queueing with loop options (`Off`, `Single Track`, `Queue`) and automatic inactivity disconnects after 5 minutes of idle time.
 
 ## Database Schema
 

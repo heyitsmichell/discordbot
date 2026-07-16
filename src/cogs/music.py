@@ -1,0 +1,809 @@
+import discord
+from discord import app_commands
+from discord.ext import commands
+from discord.ui import View, Button
+import asyncio
+import os
+import json
+import time
+import logging
+import urllib.parse
+from datetime import timedelta
+
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
+
+# Setup directory structure for local music storage
+MUSIC_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'music')
+MUSIC_FILES_DIR = os.path.join(MUSIC_DATA_DIR, 'files')
+MUSIC_INDEX_FILE = os.path.join(MUSIC_DATA_DIR, 'library.json')
+
+os.makedirs(MUSIC_FILES_DIR, exist_ok=True)
+
+
+def load_music_index() -> dict:
+    if not os.path.exists(MUSIC_INDEX_FILE):
+        return {"tracks": {}, "next_id": 1}
+    try:
+        with open(MUSIC_INDEX_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if "tracks" not in data:
+                data["tracks"] = {}
+            if "next_id" not in data:
+                data["next_id"] = 1
+            return data
+    except Exception as e:
+        logging.error(f"Failed to load music index: {e}")
+        return {"tracks": {}, "next_id": 1}
+
+
+def save_music_index(data: dict):
+    try:
+        with open(MUSIC_INDEX_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        logging.error(f"Failed to save music index: {e}")
+
+
+def get_ffmpeg_path() -> str:
+    for path in ['/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg', 'ffmpeg']:
+        if os.path.exists(path) or path == 'ffmpeg':
+            return path
+    return 'ffmpeg'
+
+
+def format_duration(seconds: int | float) -> str:
+    if not seconds or seconds <= 0:
+        return "Unknown / Live"
+    seconds = int(seconds)
+    if seconds >= 3600:
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        secs = seconds % 60
+        return f"{hours:02}:{minutes:02}:{secs:02}"
+    else:
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes:02}:{secs:02}"
+
+
+class NowPlayingView(View):
+    def __init__(self, player: 'GuildMusicPlayer'):
+        super().__init__(timeout=None)
+        self.player = player
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.clear_items()
+        
+        # Pause/Resume Button
+        pause_label = "Resume" if self.player.is_paused else "Pause"
+        pause_style = discord.ButtonStyle.green if self.player.is_paused else discord.ButtonStyle.secondary
+        pause_emoji = "▶️" if self.player.is_paused else "⏸️"
+        
+        btn_pause = Button(label=pause_label, style=pause_style, emoji=pause_emoji, custom_id=f"np_pause_{self.player.guild_id}")
+        btn_pause.callback = self.on_pause_resume
+        self.add_item(btn_pause)
+
+        # Skip Button
+        btn_skip = Button(label="Skip", style=discord.ButtonStyle.primary, emoji="⏭️", custom_id=f"np_skip_{self.player.guild_id}")
+        btn_skip.callback = self.on_skip
+        self.add_item(btn_skip)
+
+        # Loop Button
+        loop_emoji = "🔁" if self.player.loop_mode == "QUEUE" else ("🔂" if self.player.loop_mode == "TRACK" else "➡️")
+        loop_style = discord.ButtonStyle.success if self.player.loop_mode != "OFF" else discord.ButtonStyle.secondary
+        btn_loop = Button(label=f"Loop: {self.player.loop_mode}", style=loop_style, emoji=loop_emoji, custom_id=f"np_loop_{self.player.guild_id}")
+        btn_loop.callback = self.on_loop
+        self.add_item(btn_loop)
+
+        # Stop Button
+        btn_stop = Button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️", custom_id=f"np_stop_{self.player.guild_id}")
+        btn_stop.callback = self.on_stop
+        self.add_item(btn_stop)
+
+    async def on_pause_resume(self, interaction: discord.Interaction):
+        if not self.player.voice_client or not self.player.current_track:
+            return await interaction.response.send_message("❌ Nothing is currently playing.", ephemeral=True)
+        
+        if self.player.is_paused:
+            self.player.voice_client.resume()
+            self.player.is_paused = False
+            await interaction.response.send_message("▶️ Resumed playback!", ephemeral=True)
+        else:
+            self.player.voice_client.pause()
+            self.player.is_paused = True
+            await interaction.response.send_message("⏸️ Paused playback!", ephemeral=True)
+        
+        self.update_buttons()
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+    async def on_skip(self, interaction: discord.Interaction):
+        if not self.player.voice_client or not self.player.current_track:
+            return await interaction.response.send_message("❌ Nothing is currently playing.", ephemeral=True)
+        
+        await interaction.response.send_message("⏭️ Skipped current track!", ephemeral=True)
+        self.player.voice_client.stop()
+
+    async def on_loop(self, interaction: discord.Interaction):
+        if self.player.loop_mode == "OFF":
+            self.player.loop_mode = "TRACK"
+        elif self.player.loop_mode == "TRACK":
+            self.player.loop_mode = "QUEUE"
+        else:
+            self.player.loop_mode = "OFF"
+            
+        self.update_buttons()
+        await interaction.response.send_message(f"🔁 Loop mode set to: **{self.player.loop_mode}**", ephemeral=True)
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+    async def on_stop(self, interaction: discord.Interaction):
+        if not self.player.voice_client:
+            return await interaction.response.send_message("❌ Bot is not in a voice channel.", ephemeral=True)
+        
+        self.player.queue.clear()
+        if self.player.voice_client.is_playing() or self.player.voice_client.is_paused():
+            self.player.voice_client.stop()
+            
+        await interaction.response.send_message("⏹️ Stopped playback and cleared the queue.", ephemeral=True)
+
+
+class GuildMusicPlayer:
+    def __init__(self, bot: commands.Bot, guild_id: int):
+        self.bot = bot
+        self.guild_id = guild_id
+        self.queue: list[dict] = []
+        self.current_track: dict | None = None
+        self.voice_client: discord.VoiceClient | None = None
+        self.is_playing: bool = False
+        self.is_paused: bool = False
+        self.loop_mode: str = "OFF"  # OFF, TRACK, QUEUE
+        self.volume: float = 1.0
+        self.inactivity_task: asyncio.Task | None = None
+        self.channel_for_updates: discord.TextChannel | None = None
+
+    async def connect(self, voice_channel: discord.VoiceChannel):
+        if self.voice_client and self.voice_client.is_connected():
+            if self.voice_client.channel.id != voice_channel.id:
+                await self.voice_client.move_to(voice_channel)
+        else:
+            self.voice_client = await voice_channel.connect()
+        self.reset_inactivity_timer()
+
+    async def disconnect(self):
+        if self.inactivity_task:
+            self.inactivity_task.cancel()
+            self.inactivity_task = None
+        self.queue.clear()
+        self.current_track = None
+        self.is_playing = False
+        self.is_paused = False
+        if self.voice_client and self.voice_client.is_connected():
+            await self.voice_client.disconnect()
+        self.voice_client = None
+
+    def reset_inactivity_timer(self):
+        if self.inactivity_task:
+            self.inactivity_task.cancel()
+        self.inactivity_task = self.bot.loop.create_task(self.inactivity_check())
+
+    async def inactivity_check(self):
+        await asyncio.sleep(300)  # 5 minutes idle timeout
+        if not self.is_playing and (not self.voice_client or not self.voice_client.is_playing()):
+            if self.channel_for_updates:
+                try:
+                    await self.channel_for_updates.send("💤 Left voice channel due to 5 minutes of inactivity.")
+                except Exception:
+                    pass
+            await self.disconnect()
+
+    def add_to_queue(self, track: dict):
+        self.queue.append(track)
+        if self.inactivity_task:
+            self.inactivity_task.cancel()
+
+    def create_audio_source(self, track: dict) -> discord.AudioSource:
+        ffmpeg_executable = get_ffmpeg_path()
+        if track.get('is_local'):
+            source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable)
+        else:
+            ffmpeg_options = {
+                'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                'options': '-vn'
+            }
+            source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
+        
+        return discord.PCMVolumeTransformer(source, volume=self.volume)
+
+    def after_play_callback(self, error):
+        if error:
+            logging.error(f"Error playing track {self.current_track.get('title') if self.current_track else 'unknown'}: {error}")
+        asyncio.run_coroutine_threadsafe(self.play_next(), self.bot.loop)
+
+    async def play_next(self):
+        if not self.voice_client or not self.voice_client.is_connected():
+            self.is_playing = False
+            return
+
+        # Handle loop modes
+        if self.loop_mode == "TRACK" and self.current_track:
+            track_to_play = self.current_track
+        elif self.loop_mode == "QUEUE" and self.current_track:
+            self.queue.append(self.current_track)
+            if self.queue:
+                track_to_play = self.queue.pop(0)
+            else:
+                track_to_play = None
+        else:
+            if self.queue:
+                track_to_play = self.queue.pop(0)
+            else:
+                track_to_play = None
+
+        if not track_to_play:
+            self.current_track = None
+            self.is_playing = False
+            self.is_paused = False
+            self.reset_inactivity_timer()
+            return
+
+        self.current_track = track_to_play
+        self.is_playing = True
+        self.is_paused = False
+        if self.inactivity_task:
+            self.inactivity_task.cancel()
+
+        # Check if we need to refresh stream URL (for non-local tracks older than 1 hour or expired URLs)
+        if not track_to_play.get('is_local') and yt_dlp:
+            try:
+                # Re-extract fresh stream URL if needed
+                loop = asyncio.get_event_loop()
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'noplaylist': True,
+                    'quiet': True,
+                    'extract_flat': False
+                }
+                info = await loop.run_in_executor(
+                    None,
+                    lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(track_to_play['webpage_url'], download=False)
+                )
+                if info and 'url' in info:
+                    track_to_play['source'] = info['url']
+            except Exception as e:
+                logging.warning(f"Could not refresh stream URL for {track_to_play.get('title')}: {e}")
+
+        try:
+            source = self.create_audio_source(track_to_play)
+            self.voice_client.play(source, after=self.after_play_callback)
+            
+            # Send Now Playing announcement
+            if self.channel_for_updates:
+                embed = discord.Embed(
+                    title="🎶 Now Playing",
+                    description=f"**[{track_to_play['title']}]({track_to_play.get('webpage_url', '')})**" if not track_to_play.get('is_local') else f"**{track_to_play['title']}** (Local Upload)",
+                    color=discord.Color.from_rgb(255, 105, 180)
+                )
+                embed.add_field(name="⏱️ Duration", value=format_duration(track_to_play.get('duration', 0)), inline=True)
+                embed.add_field(name="👤 Requested By", value=track_to_play.get('uploader_name', 'Unknown'), inline=True)
+                if track_to_play.get('is_local'):
+                    embed.set_footer(text="📁 Played from Bot Local Music Library")
+                else:
+                    embed.set_footer(text="🌐 Streamed via YouTube / Web")
+                
+                view = NowPlayingView(self)
+                try:
+                    await self.channel_for_updates.send(embed=embed, view=view)
+                except Exception:
+                    pass
+        except Exception as e:
+            logging.error(f"Failed to play track {track_to_play.get('title')}: {e}")
+            if self.channel_for_updates:
+                try:
+                    await self.channel_for_updates.send(f"⚠️ Failed to play **{track_to_play.get('title')}**: `{e}`. Skipping to next...")
+                except Exception:
+                    pass
+            await self.play_next()
+
+
+class Music(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.players: dict[int, GuildMusicPlayer] = {}
+
+    def get_player(self, guild: discord.Guild) -> GuildMusicPlayer:
+        if guild.id not in self.players:
+            self.players[guild.id] = GuildMusicPlayer(self.bot, guild.id)
+        return self.players[guild.id]
+
+    async def extract_web_track(self, query: str, requester: discord.Member) -> list[dict]:
+        if not yt_dlp:
+            raise RuntimeError("yt-dlp is not installed or available on this bot.")
+
+        loop = asyncio.get_event_loop()
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'noplaylist': True,
+            'quiet': True,
+            'default_search': 'auto',
+            'extract_flat': False
+        }
+
+        # Check if it's a direct URL or search term
+        if not (query.startswith("http://") or query.startswith("https://")):
+            query = f"ytsearch1:{query}"
+
+        info = await loop.run_in_executor(
+            None,
+            lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(query, download=False)
+        )
+
+        if not info:
+            return []
+
+        entries = info.get('entries', [info]) if 'entries' in info else [info]
+        tracks = []
+        for entry in entries:
+            if not entry:
+                continue
+            tracks.append({
+                'title': entry.get('title', 'Unknown Title'),
+                'source': entry.get('url'),
+                'webpage_url': entry.get('webpage_url', query),
+                'duration': entry.get('duration', 0),
+                'uploader_id': str(requester.id),
+                'uploader_name': requester.display_name,
+                'is_local': False
+            })
+        return tracks
+
+    # ==================== Upload & Library Management Commands ====================
+
+    @commands.hybrid_command(name="uploadmusic", description="Upload your own music file (.mp3, .wav, .flac, .ogg, .m4a) to the bot")
+    @app_commands.describe(
+        attachment="The audio file attachment to upload",
+        title="Optional custom name for this song"
+    )
+    async def uploadmusic(self, ctx: commands.Context, attachment: discord.Attachment, title: str = None):
+        """Upload your own music to the bot's library."""
+        allowed_extensions = ('.mp3', '.wav', '.ogg', '.flac', '.m4a', '.mp4', '.webm')
+        if not any(attachment.filename.lower().endswith(ext) for ext in allowed_extensions) and not (attachment.content_type and any(attachment.content_type.startswith(t) for t in ('audio/', 'video/'))):
+            return await ctx.send("❌ Unsupported file format! Please upload an audio file (`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`).", ephemeral=True)
+
+        if attachment.size > 50 * 1024 * 1024:  # 50MB safety limit
+            return await ctx.send("❌ File is too large! Please upload files under 50 MB.", ephemeral=True)
+
+        await ctx.defer()
+
+        index = load_music_index()
+        track_id = str(index.get("next_id", 1))
+        index["next_id"] = int(track_id) + 1
+
+        clean_name = f"{track_id}_{int(time.time())}_{attachment.filename}"
+        filepath = os.path.join(MUSIC_FILES_DIR, clean_name)
+
+        try:
+            await attachment.save(filepath)
+        except Exception as e:
+            logging.error(f"Failed to save uploaded music file: {e}")
+            return await ctx.send(f"❌ Failed to save file: `{e}`")
+
+        song_title = title.strip() if title else os.path.splitext(attachment.filename)[0]
+
+        index["tracks"][track_id] = {
+            "id": track_id,
+            "title": song_title,
+            "filename": clean_name,
+            "filepath": filepath,
+            "uploader_id": str(ctx.author.id),
+            "uploader_name": ctx.author.display_name,
+            "uploaded_at": int(time.time()),
+            "duration": 0
+        }
+        save_music_index(index)
+
+        embed = discord.Embed(
+            title="✅ Music Uploaded Successfully!",
+            description=f"**Title:** {song_title}\n**Track ID:** `#`{track_id}",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="📁 Filename", value=f"`{attachment.filename}`", inline=True)
+        embed.add_field(name="👤 Uploaded By", value=ctx.author.mention, inline=True)
+        embed.set_footer(text=f"Use /play {song_title} or /play #{track_id} to play this song!")
+
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="listmusic", aliases=["mymusic", "uploads"], description="Show all music tracks uploaded to the bot")
+    async def listmusic(self, ctx: commands.Context):
+        """Show uploaded local music tracks."""
+        index = load_music_index()
+        tracks = list(index.get("tracks", {}).values())
+
+        if not tracks:
+            embed = discord.Embed(
+                title="📂 Bot Music Library",
+                description="No music files have been uploaded yet! Use `/uploadmusic` to add some.",
+                color=discord.Color.blurple()
+            )
+            return await ctx.send(embed=embed)
+
+        embed = discord.Embed(
+            title="📂 Bot Music Library (Local Uploads)",
+            description=f"Showing **{len(tracks)}** uploaded track(s). Play them anytime using `/play <title>` or `/play #<ID>`!",
+            color=discord.Color.blurple()
+        )
+
+        for t in tracks[:15]:  # Display top 15 in embed
+            embed.add_field(
+                name=f"Track #{t['id']} — {t['title']}",
+                value=f"👤 Uploaded by **{t['uploader_name']}** • `<{t['filename']}>`",
+                inline=False
+            )
+
+        if len(tracks) > 15:
+            embed.set_footer(text=f"And {len(tracks) - 15} more track(s)...")
+
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="deletemusic", description="Delete an uploaded music track by ID or exact title")
+    @app_commands.describe(track_identifier="The track ID (e.g. 1) or exact song title to delete")
+    async def deletemusic(self, ctx: commands.Context, track_identifier: str):
+        """Delete an uploaded track."""
+        index = load_music_index()
+        tracks = index.get("tracks", {})
+
+        target_id = None
+        if track_identifier.startswith("#") and track_identifier[1:].isdigit():
+            target_id = track_identifier[1:]
+        elif track_identifier.isdigit() and track_identifier in tracks:
+            target_id = track_identifier
+        else:
+            for tid, tinfo in tracks.items():
+                if tinfo["title"].lower() == track_identifier.lower():
+                    target_id = tid
+                    break
+
+        if not target_id or target_id not in tracks:
+            return await ctx.send("❌ Track not found! Please check `/listmusic` for valid IDs and titles.", ephemeral=True)
+
+        track_info = tracks[target_id]
+        # Allow uploader or server administrator to delete
+        is_mod = ctx.author.guild_permissions.administrator or (ctx.guild and ctx.author == ctx.guild.owner)
+        if track_info["uploader_id"] != str(ctx.author.id) and not is_mod:
+            return await ctx.send("❌ You do not have permission to delete this track. Only the uploader or an Admin can delete it.", ephemeral=True)
+
+        # Remove file from disk
+        try:
+            if os.path.exists(track_info["filepath"]):
+                os.remove(track_info["filepath"])
+        except Exception as e:
+            logging.warning(f"Could not delete physical file for track {target_id}: {e}")
+
+        deleted_title = track_info["title"]
+        del tracks[target_id]
+        save_music_index(index)
+
+        await ctx.send(f"🗑️ Successfully deleted track **#{target_id} — {deleted_title}**.")
+
+    # ==================== Playback Commands ====================
+
+    @commands.hybrid_command(name="join", description="Make the bot join your current voice channel")
+    async def join(self, ctx: commands.Context):
+        """Join author's voice channel."""
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            return await ctx.send("❌ You must be in a voice channel first!", ephemeral=True)
+
+        player = self.get_player(ctx.guild)
+        player.channel_for_updates = ctx.channel
+        await player.connect(ctx.author.voice.channel)
+        await ctx.send(f"🔊 Joined **{ctx.author.voice.channel.name}**!")
+
+    @commands.hybrid_command(name="leave", aliases=["disconnect"], description="Disconnect the bot from voice and clear the queue")
+    async def leave(self, ctx: commands.Context):
+        """Leave voice channel."""
+        player = self.get_player(ctx.guild)
+        if not player.voice_client or not player.voice_client.is_connected():
+            return await ctx.send("❌ Bot is not currently in a voice channel.", ephemeral=True)
+
+        channel_name = player.voice_client.channel.name
+        await player.disconnect()
+        await ctx.send(f"👋 Disconnected from **{channel_name}** and cleared the queue.")
+
+    @commands.hybrid_command(name="play", aliases=["p"], description="Play a local uploaded song, YouTube link, search query, or attached file")
+    @app_commands.describe(
+        query="Song title from local library, YouTube URL, or search query",
+        attachment="Optional audio file attachment to play directly"
+    )
+    async def play(self, ctx: commands.Context, query: str = None, attachment: discord.Attachment = None):
+        """Play audio from upload, library, or YouTube."""
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            return await ctx.send("❌ You must be inside a voice channel to play music!", ephemeral=True)
+
+        if not query and not attachment:
+            return await ctx.send("❌ Please provide either a song title/URL/query or attach an audio file to play!", ephemeral=True)
+
+        await ctx.defer()
+
+        player = self.get_player(ctx.guild)
+        player.channel_for_updates = ctx.channel
+        if not player.voice_client or not player.voice_client.is_connected():
+            await player.connect(ctx.author.voice.channel)
+
+        tracks_to_add = []
+
+        # 1. Check if attachment is provided directly
+        if attachment:
+            allowed_extensions = ('.mp3', '.wav', '.ogg', '.flac', '.m4a', '.mp4', '.webm')
+            if not any(attachment.filename.lower().endswith(ext) for ext in allowed_extensions) and not (attachment.content_type and any(attachment.content_type.startswith(t) for t in ('audio/', 'video/'))):
+                return await ctx.send("❌ Unsupported attachment format! Please attach an audio file.")
+
+            # Save temporarily or into library
+            index = load_music_index()
+            track_id = str(index.get("next_id", 1))
+            index["next_id"] = int(track_id) + 1
+            clean_name = f"{track_id}_{int(time.time())}_{attachment.filename}"
+            filepath = os.path.join(MUSIC_FILES_DIR, clean_name)
+
+            try:
+                await attachment.save(filepath)
+                song_title = os.path.splitext(attachment.filename)[0]
+                index["tracks"][track_id] = {
+                    "id": track_id,
+                    "title": song_title,
+                    "filename": clean_name,
+                    "filepath": filepath,
+                    "uploader_id": str(ctx.author.id),
+                    "uploader_name": ctx.author.display_name,
+                    "uploaded_at": int(time.time()),
+                    "duration": 0
+                }
+                save_music_index(index)
+
+                tracks_to_add.append({
+                    'title': song_title,
+                    'source': filepath,
+                    'webpage_url': '',
+                    'duration': 0,
+                    'uploader_id': str(ctx.author.id),
+                    'uploader_name': ctx.author.display_name,
+                    'is_local': True
+                })
+            except Exception as e:
+                return await ctx.send(f"❌ Failed to download attachment: `{e}`")
+
+        # 2. Check query against local library or YouTube
+        if query:
+            index = load_music_index()
+            local_match = None
+
+            # Check if query matches ID (#1 or 1)
+            clean_query = query.strip()
+            if clean_query.startswith("#") and clean_query[1:].isdigit():
+                tid = clean_query[1:]
+                if tid in index["tracks"]:
+                    local_match = index["tracks"][tid]
+            elif clean_query.isdigit() and clean_query in index["tracks"]:
+                local_match = index["tracks"][clean_query]
+            else:
+                # Search exact or partial title
+                for tid, tinfo in index["tracks"].items():
+                    if tinfo["title"].lower() == clean_query.lower():
+                        local_match = tinfo
+                        break
+                if not local_match:
+                    for tid, tinfo in index["tracks"].items():
+                        if clean_query.lower() in tinfo["title"].lower():
+                            local_match = tinfo
+                            break
+
+            if local_match:
+                # Ensure physical file still exists
+                if os.path.exists(local_match["filepath"]):
+                    tracks_to_add.append({
+                        'title': local_match["title"],
+                        'source': local_match["filepath"],
+                        'webpage_url': '',
+                        'duration': local_match.get("duration", 0),
+                        'uploader_id': local_match["uploader_id"],
+                        'uploader_name': local_match["uploader_name"],
+                        'is_local': True
+                    })
+                else:
+                    await ctx.send(f"⚠️ Local file for **{local_match['title']}** was missing from disk. Searching YouTube instead...")
+                    local_match = None
+
+            if not local_match and not attachment:
+                # Extract via yt-dlp (YouTube link or search)
+                try:
+                    extracted = await self.extract_web_track(query, ctx.author)
+                    if not extracted:
+                        return await ctx.send(f"❌ Could not find any tracks matching `{query}` on YouTube.")
+                    tracks_to_add.extend(extracted)
+                except Exception as e:
+                    return await ctx.send(f"❌ Failed to extract audio: `{e}`")
+
+        # Add all discovered tracks to player queue
+        for t in tracks_to_add:
+            player.add_to_queue(t)
+
+        if len(tracks_to_add) == 1:
+            track = tracks_to_add[0]
+            if not player.is_playing:
+                await player.play_next()
+                if not ctx.interaction:
+                    # If prefix command and play_next already sent the embed, we don't need double msg unless needed
+                    pass
+            else:
+                embed = discord.Embed(
+                    title="➕ Added to Queue",
+                    description=f"**[{track['title']}]({track['webpage_url']})**" if not track.get('is_local') else f"**{track['title']}** (Local Upload)",
+                    color=discord.Color.from_rgb(100, 149, 237)
+                )
+                embed.add_field(name="⏱️ Duration", value=format_duration(track.get('duration', 0)), inline=True)
+                embed.add_field(name="📋 Position in Queue", value=f"#{len(player.queue)}", inline=True)
+                await ctx.send(embed=embed)
+        else:
+            if not player.is_playing:
+                await player.play_next()
+            embed = discord.Embed(
+                title="➕ Playlist / Multiple Tracks Added",
+                description=f"Added **{len(tracks_to_add)}** tracks to the queue!",
+                color=discord.Color.from_rgb(100, 149, 237)
+            )
+            await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="nowplaying", aliases=["np"], description="Show currently playing track and interactive controls")
+    async def nowplaying(self, ctx: commands.Context):
+        """Show currently playing song."""
+        player = self.get_player(ctx.guild)
+        if not player.current_track:
+            return await ctx.send("❌ Nothing is currently playing right now.", ephemeral=True)
+
+        t = player.current_track
+        embed = discord.Embed(
+            title="🎶 Currently Playing",
+            description=f"**[{t['title']}]({t.get('webpage_url', '')})**" if not t.get('is_local') else f"**{t['title']}** (Local Upload)",
+            color=discord.Color.from_rgb(255, 105, 180)
+        )
+        embed.add_field(name="⏱️ Duration", value=format_duration(t.get('duration', 0)), inline=True)
+        embed.add_field(name="👤 Requested By", value=t.get('uploader_name', 'Unknown'), inline=True)
+        embed.add_field(name="🔁 Loop Mode", value=f"`{player.loop_mode}`", inline=True)
+        embed.add_field(name="🔊 Volume", value=f"`{int(player.volume * 100)}%`", inline=True)
+
+        if t.get('is_local'):
+            embed.set_footer(text="📁 Played from Bot Local Music Library")
+        else:
+            embed.set_footer(text="🌐 Streamed via YouTube / Web")
+
+        view = NowPlayingView(player)
+        await ctx.send(embed=embed, view=view)
+
+    @commands.hybrid_command(name="queue", aliases=["q"], description="Show the current music queue")
+    async def queue(self, ctx: commands.Context):
+        """Show the current queue."""
+        player = self.get_player(ctx.guild)
+        if not player.current_track and not player.queue:
+            return await ctx.send("📭 The music queue is completely empty right now. Add songs using `/play`!")
+
+        embed = discord.Embed(
+            title="📋 Current Music Queue",
+            color=discord.Color.blurple()
+        )
+
+        if player.current_track:
+            ct = player.current_track
+            embed.add_field(
+                name="▶️ Now Playing",
+                value=f"**{ct['title']}** (`{format_duration(ct.get('duration', 0))}`) — Requested by **{ct.get('uploader_name', 'Unknown')}**",
+                inline=False
+            )
+
+        if player.queue:
+            queue_lines = []
+            for idx, t in enumerate(player.queue[:10], start=1):
+                queue_lines.append(f"`{idx}.` **{t['title']}** (`{format_duration(t.get('duration', 0))}`) • **{t.get('uploader_name', 'Unknown')}**")
+            
+            embed.add_field(name=f"⏭️ Up Next ({len(player.queue)} track(s))", value="\n".join(queue_lines), inline=False)
+            if len(player.queue) > 10:
+                embed.set_footer(text=f"And {len(player.queue) - 10} more song(s) waiting in line...")
+        else:
+            embed.add_field(name="⏭️ Up Next", value="*No upcoming songs in the queue.*", inline=False)
+
+        embed.add_field(name="⚙️ Settings", value=f"**Loop Mode:** `{player.loop_mode}` | **Volume:** `{int(player.volume * 100)}%`", inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="skip", aliases=["fs", "s"], description="Skip the currently playing song")
+    async def skip(self, ctx: commands.Context):
+        """Skip currently playing track."""
+        player = self.get_player(ctx.guild)
+        if not player.voice_client or not player.current_track:
+            return await ctx.send("❌ Nothing is playing right now.", ephemeral=True)
+
+        title = player.current_track['title']
+        player.voice_client.stop()
+        await ctx.send(f"⏭️ Skipped **{title}**!")
+
+    @commands.hybrid_command(name="pause", description="Pause current music playback")
+    async def pause(self, ctx: commands.Context):
+        """Pause playback."""
+        player = self.get_player(ctx.guild)
+        if not player.voice_client or not player.current_track:
+            return await ctx.send("❌ Nothing is playing right now.", ephemeral=True)
+        if player.is_paused:
+            return await ctx.send("⚠️ Playback is already paused! Use `/resume` to continue.", ephemeral=True)
+
+        player.voice_client.pause()
+        player.is_paused = True
+        await ctx.send("⏸️ Paused music playback. Use `/resume` when you're ready to continue.")
+
+    @commands.hybrid_command(name="resume", description="Resume paused music playback")
+    async def resume(self, ctx: commands.Context):
+        """Resume paused playback."""
+        player = self.get_player(ctx.guild)
+        if not player.voice_client or not player.current_track:
+            return await ctx.send("❌ Nothing is playing right now.", ephemeral=True)
+        if not player.is_paused:
+            return await ctx.send("⚠️ Playback is already playing smoothly!", ephemeral=True)
+
+        player.voice_client.resume()
+        player.is_paused = False
+        await ctx.send("▶️ Resumed music playback!")
+
+    @commands.hybrid_command(name="stop", description="Stop playback and clear the entire music queue")
+    async def stop(self, ctx: commands.Context):
+        """Stop playing and clear queue."""
+        player = self.get_player(ctx.guild)
+        if not player.voice_client:
+            return await ctx.send("❌ Bot is not in a voice channel.", ephemeral=True)
+
+        player.queue.clear()
+        if player.voice_client.is_playing() or player.voice_client.is_paused():
+            player.voice_client.stop()
+        await ctx.send("⏹️ Stopped playback and cleared the entire music queue.")
+
+    @commands.hybrid_command(name="loop", description="Toggle loop mode between Off, Single Track, and Queue")
+    @app_commands.describe(mode="Optional specific loop mode: OFF, TRACK, or QUEUE")
+    async def loop(self, ctx: commands.Context, mode: str = None):
+        """Toggle loop mode."""
+        player = self.get_player(ctx.guild)
+        if mode:
+            mode_upper = mode.upper()
+            if mode_upper not in ("OFF", "TRACK", "QUEUE"):
+                return await ctx.send("❌ Invalid mode! Choose from `OFF`, `TRACK`, or `QUEUE`.", ephemeral=True)
+            player.loop_mode = mode_upper
+        else:
+            if player.loop_mode == "OFF":
+                player.loop_mode = "TRACK"
+            elif player.loop_mode == "TRACK":
+                player.loop_mode = "QUEUE"
+            else:
+                player.loop_mode = "OFF"
+
+        emoji = "🔁" if player.loop_mode == "QUEUE" else ("🔂" if player.loop_mode == "TRACK" else "➡️")
+        await ctx.send(f"{emoji} Loop mode is now set to: **{player.loop_mode}**")
+
+    @commands.hybrid_command(name="volume", aliases=["vol"], description="Adjust music playback volume (1-100%)")
+    @app_commands.describe(level="Volume percentage between 1 and 100")
+    async def volume(self, ctx: commands.Context, level: int):
+        """Adjust volume."""
+        if level < 1 or level > 100:
+            return await ctx.send("❌ Volume must be between 1 and 100!", ephemeral=True)
+
+        player = self.get_player(ctx.guild)
+        player.volume = level / 100.0
+        if player.voice_client and player.voice_client.source and isinstance(player.voice_client.source, discord.PCMVolumeTransformer):
+            player.voice_client.source.volume = player.volume
+
+        await ctx.send(f"🔊 Playback volume set to **{level}%**!")
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Music(bot))

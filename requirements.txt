@@ -8,3 +8,5 @@ geopy
 timezonefinder
 pytz
 google-genai
+PyNaCl
+yt-dlp
