@@ -9,5 +9,6 @@ timezonefinder
 pytz
 google-genai
 PyNaCl
+davey
 yt-dlp
 imageio-ffmpeg
