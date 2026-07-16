@@ -155,6 +155,20 @@ def get_ydl_opts(extract_flat: bool = False) -> dict:
     }
     cookies_browser = os.getenv('YT_COOKIES_BROWSER')
     cookies_file = os.getenv('YT_COOKIES_FILE')
+
+    # If YT_COOKIES_FILE not explicitly set, auto-detect cookies.txt in common locations
+    if not cookies_file:
+        possible_paths = [
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'cookies.txt'), # Project root
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'cookies.txt'),                  # src/cookies.txt
+            os.path.join(MUSIC_DATA_DIR, 'cookies.txt'),                                              # data/music/cookies.txt
+            'cookies.txt'
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                cookies_file = path
+                break
+
     if cookies_browser:
         opts['cookiesfrombrowser'] = (cookies_browser,)
     elif cookies_file and os.path.exists(cookies_file):
