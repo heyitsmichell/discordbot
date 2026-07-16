@@ -32,6 +32,7 @@ MUSIC_FILES_DIR = os.path.join(MUSIC_DATA_DIR, 'files')
 MUSIC_INDEX_FILE = os.path.join(MUSIC_DATA_DIR, 'library.json')
 
 os.makedirs(MUSIC_FILES_DIR, exist_ok=True)
+YT_SEARCH_CACHE: dict[str, tuple[float, list]] = {}
 
 
 def load_music_index() -> dict:
@@ -143,7 +144,7 @@ except Exception as e:
     logging.warning(f"Could not load Opus at startup (voice may not work): {e}")
 
 
-def get_ydl_opts(extract_flat: bool = False) -> dict:
+def get_ydl_opts(extract_flat: bool | str = False) -> dict:
     opts = {
         'format': 'bestaudio/best',
         'noplaylist': True,
@@ -564,8 +565,21 @@ class Music(commands.Cog):
         if not yt_dlp:
             raise RuntimeError("yt-dlp is not installed or available on this bot.")
 
+        global YT_SEARCH_CACHE
+        now = time.time()
+        if query in YT_SEARCH_CACHE:
+            cached_time, cached_tracks = YT_SEARCH_CACHE[query]
+            if now - cached_time < 900:  # 15-minute TTL cache
+                result = []
+                for ct in cached_tracks:
+                    t_copy = ct.copy()
+                    t_copy['uploader_id'] = str(requester.id)
+                    t_copy['uploader_name'] = requester.display_name
+                    result.append(t_copy)
+                return result
+
         loop = asyncio.get_event_loop()
-        ydl_opts = get_ydl_opts()
+        ydl_opts = get_ydl_opts(extract_flat='in_playlist')
 
         is_url = query.startswith("http://") or query.startswith("https://")
 
@@ -587,10 +601,15 @@ class Music(commands.Cog):
                         for entry in entries:
                             if not entry:
                                 continue
+                            entry_url = entry.get('url')
+                            web_url = entry.get('webpage_url', f"https://www.youtube.com/results?search_query={urllib.parse.quote(sq)}")
+                            if entry_url and not str(entry_url).startswith('http://') and not str(entry_url).startswith('https://'):
+                                web_url = f"https://www.youtube.com/watch?v={entry_url}"
+                                entry_url = web_url
                             all_tracks.append({
                                 'title': entry.get('title', sq),
-                                'source': entry.get('url'),
-                                'webpage_url': entry.get('webpage_url', f"https://www.youtube.com/results?search_query={urllib.parse.quote(sq)}"),
+                                'source': entry_url,
+                                'webpage_url': web_url,
                                 'duration': entry.get('duration', 0),
                                 'uploader_id': str(requester.id),
                                 'uploader_name': requester.display_name,
@@ -602,6 +621,7 @@ class Music(commands.Cog):
 
             if not all_tracks:
                 raise RuntimeError(f"Could not find matching YouTube audio for Spotify link: {query}")
+            YT_SEARCH_CACHE[query] = (now, all_tracks.copy())
             return all_tracks
 
         search_query = query if is_url else f"ytsearch1:{query}"
@@ -623,16 +643,23 @@ class Music(commands.Cog):
         for entry in entries:
             if not entry:
                 continue
+            entry_url = entry.get('url')
+            web_url = entry.get('webpage_url', query)
+            if entry_url and not str(entry_url).startswith('http://') and not str(entry_url).startswith('https://'):
+                web_url = f"https://www.youtube.com/watch?v={entry_url}"
+                entry_url = web_url
             tracks.append({
                 'title': entry.get('title', 'Unknown Title'),
-                'source': entry.get('url'),
-                'webpage_url': entry.get('webpage_url', query),
+                'source': entry_url,
+                'webpage_url': web_url,
                 'duration': entry.get('duration', 0),
                 'uploader_id': str(requester.id),
                 'uploader_name': requester.display_name,
                 'is_local': False,
                 'http_headers': entry.get('http_headers')
             })
+        if tracks:
+            YT_SEARCH_CACHE[query] = (now, tracks.copy())
         return tracks
 
     # ==================== Upload & Library Management Commands ====================
