@@ -13,6 +13,7 @@ import urllib.request
 import re
 import concurrent.futures
 from datetime import timedelta
+import sys
 import database
 
 try:
@@ -154,9 +155,10 @@ def get_ydl_opts(extract_flat: bool = False) -> dict:
         'remote_components': ['ejs:github'],
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'android', 'ios', 'mweb', 'tv']
+                'player_client': ['web_embedded', 'default', 'tv', 'ios', '-android_sdkless']
             }
-        }
+        },
+        'sleep_requests': 1
     }
     cookies_browser = os.getenv('YT_COOKIES_BROWSER')
     cookies_file = os.getenv('YT_COOKIES_FILE')
@@ -340,7 +342,7 @@ class GuildMusicPlayer:
     def create_audio_source(self, track: dict) -> discord.AudioSource:
         ffmpeg_executable = get_ffmpeg_path()
         if track.get('is_local'):
-            source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable)
+            source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable, stderr=sys.stderr)
         else:
             before_opts = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
             http_headers = track.get('http_headers')
@@ -354,7 +356,8 @@ class GuildMusicPlayer:
 
             ffmpeg_options = {
                 'before_options': before_opts,
-                'options': '-vn'
+                'options': '-vn',
+                'stderr': sys.stderr
             }
             source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
         
