@@ -85,6 +85,15 @@ def save_music_index(data: dict):
 
 
 def get_ffmpeg_path() -> str:
+    import shutil
+    for path in ['/usr/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+        if os.path.exists(path) and os.access(path, os.X_OK):
+            return path
+
+    which_ffmpeg = shutil.which('ffmpeg')
+    if which_ffmpeg and os.access(which_ffmpeg, os.X_OK):
+        return which_ffmpeg
+
     if imageio_ffmpeg:
         try:
             exe = imageio_ffmpeg.get_ffmpeg_exe()
@@ -92,15 +101,6 @@ def get_ffmpeg_path() -> str:
                 return exe
         except Exception as e:
             logging.warning(f"Could not load bundled ffmpeg from imageio_ffmpeg: {e}")
-
-    import shutil
-    for path in ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
-        if os.path.exists(path) and os.access(path, os.X_OK):
-            return path
-
-    which_ffmpeg = shutil.which('ffmpeg')
-    if which_ffmpeg and os.access(which_ffmpeg, os.X_OK):
-        return which_ffmpeg
 
     return 'ffmpeg'
 
