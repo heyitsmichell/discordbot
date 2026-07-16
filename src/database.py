@@ -603,3 +603,78 @@ def remove_birthday_channel(guild_id: str) -> bool:
     except Exception as e:
         print(f"Error removing birthday channel: {format_supabase_error(e)}")
         return False
+
+
+# ==================== Music Library & Cloud Storage Functions ====================
+
+def get_all_music_tracks() -> list:
+    """Fetch all music tracks from Supabase database."""
+    try:
+        response = supabase.table("music_tracks").select("*").execute()
+        return response.data or []
+    except Exception as e:
+        print(f"Error fetching music tracks from Supabase: {format_supabase_error(e)}")
+        return []
+
+def upsert_music_track(track: dict) -> bool:
+    """Insert or update a music track record in Supabase."""
+    try:
+        data = {
+            "track_id": str(track["id"]),
+            "title": track.get("title", ""),
+            "filename": track.get("filename", ""),
+            "uploader_id": str(track.get("uploader_id", "")),
+            "uploader_name": track.get("uploader_name", ""),
+            "uploaded_at": int(track.get("uploaded_at", 0)),
+            "duration": int(track.get("duration", 0)),
+            "is_private": bool(track.get("is_private", False))
+        }
+        supabase.table("music_tracks").upsert(data).execute()
+        return True
+    except Exception as e:
+        print(f"Error saving music track to Supabase database: {format_supabase_error(e)}")
+        return False
+
+def delete_music_track(track_id: str, filename: str = None) -> bool:
+    """Delete a music track from Supabase database and storage bucket."""
+    try:
+        supabase.table("music_tracks").delete().eq("track_id", str(track_id)).execute()
+        if filename:
+            try:
+                supabase.storage.from_("music").remove([filename])
+            except Exception as se:
+                print(f"Error removing file {filename} from Supabase storage: {format_supabase_error(se)}")
+        return True
+    except Exception as e:
+        print(f"Error deleting music track from Supabase: {format_supabase_error(e)}")
+        return False
+
+def upload_music_storage(filename: str, filepath: str) -> bool:
+    """Upload a physical audio file to the 'music' Supabase Storage bucket."""
+    try:
+        if not os.path.exists(filepath):
+            return False
+        with open(filepath, "rb") as f:
+            file_bytes = f.read()
+        supabase.storage.from_("music").upload(
+            path=filename,
+            file=file_bytes,
+            file_options={"upsert": "true"}
+        )
+        return True
+    except Exception as e:
+        print(f"Error uploading {filename} to Supabase storage bucket: {format_supabase_error(e)}")
+        return False
+
+def download_music_storage(filename: str, dest_filepath: str) -> bool:
+    """Download an audio file from the 'music' Supabase Storage bucket to local disk."""
+    try:
+        response = supabase.storage.from_("music").download(filename)
+        if response:
+            with open(dest_filepath, "wb") as f:
+                f.write(response)
+            return True
+        return False
+    except Exception as e:
+        print(f"Error downloading {filename} from Supabase storage bucket: {format_supabase_error(e)}")
+        return False

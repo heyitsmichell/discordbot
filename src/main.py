@@ -113,9 +113,11 @@ def get_help_embed() -> discord.Embed:
         name="🎵 Music & Audio",
         value=(
             "`/join` | `/leave` – Join or leave your voice channel\n"
-            "`/play <song/URL/query>` – Play uploaded song, YouTube link, or query\n"
-            "`/uploadmusic <file> [title]` – Upload your own music file (`.mp3`, etc.)\n"
-            "`/listmusic` | `/deletemusic <id>` – Browse or delete uploaded songs\n"
+            "`/play <song/URL/query> [private:True]` – Play local song, YouTube link, or query\n"
+            "`/uploadmusic <file> [title] [private:True]` – Upload music file (`.mp3`, etc.)\n"
+            "`/listmusic [private_only:True]` – Browse available or private uploaded songs\n"
+            "`/toggleprivacy <id_or_title>` – Toggle a track between Public and Private\n"
+            "`/deletemusic <id>` – Delete your uploaded song\n"
             "`/nowplaying` (`/np`) – Show current song with interactive controls\n"
             "`/queue` (`/q`) – Show upcoming songs waiting in line\n"
             "`/pause` | `/resume` – Pause or continue music playback\n"

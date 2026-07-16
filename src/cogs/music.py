@@ -9,6 +9,7 @@ import time
 import logging
 import urllib.parse
 from datetime import timedelta
+import database
 
 try:
     import yt_dlp
@@ -24,19 +25,45 @@ os.makedirs(MUSIC_FILES_DIR, exist_ok=True)
 
 
 def load_music_index() -> dict:
-    if not os.path.exists(MUSIC_INDEX_FILE):
-        return {"tracks": {}, "next_id": 1}
+    data = {"tracks": {}, "next_id": 1}
+    if os.path.exists(MUSIC_INDEX_FILE):
+        try:
+            with open(MUSIC_INDEX_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if "tracks" not in data:
+                    data["tracks"] = {}
+                if "next_id" not in data:
+                    data["next_id"] = 1
+        except Exception as e:
+            logging.error(f"Failed to load music index from disk: {e}")
+
+    # Sync/merge with Supabase cloud database
     try:
-        with open(MUSIC_INDEX_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if "tracks" not in data:
-                data["tracks"] = {}
-            if "next_id" not in data:
-                data["next_id"] = 1
-            return data
+        cloud_tracks = database.get_all_music_tracks()
+        max_id = int(data.get("next_id", 1)) - 1
+        for ct in cloud_tracks:
+            tid = str(ct.get("track_id"))
+            if tid.isdigit() and int(tid) > max_id:
+                max_id = int(tid)
+            if tid not in data["tracks"]:
+                filename = ct.get("filename", "")
+                filepath = os.path.join(MUSIC_FILES_DIR, filename)
+                data["tracks"][tid] = {
+                    "id": tid,
+                    "title": ct.get("title", ""),
+                    "filename": filename,
+                    "filepath": filepath,
+                    "uploader_id": str(ct.get("uploader_id", "")),
+                    "uploader_name": ct.get("uploader_name", ""),
+                    "uploaded_at": int(ct.get("uploaded_at", 0)),
+                    "duration": int(ct.get("duration", 0)),
+                    "is_private": bool(ct.get("is_private", False))
+                }
+        data["next_id"] = max(max_id + 1, int(data.get("next_id", 1)))
     except Exception as e:
-        logging.error(f"Failed to load music index: {e}")
-        return {"tracks": {}, "next_id": 1}
+        logging.warning(f"Could not merge cloud tracks from Supabase: {e}")
+
+    return data
 
 
 def save_music_index(data: dict):
@@ -370,9 +397,10 @@ class Music(commands.Cog):
     @commands.hybrid_command(name="uploadmusic", description="Upload your own music file (.mp3, .wav, .flac, .ogg, .m4a) to the bot")
     @app_commands.describe(
         attachment="The audio file attachment to upload",
-        title="Optional custom name for this song"
+        title="Optional custom name for this song",
+        private="Set to True if you want only yourself to be able to browse or play this song"
     )
-    async def uploadmusic(self, ctx: commands.Context, attachment: discord.Attachment, title: str = None):
+    async def uploadmusic(self, ctx: commands.Context, attachment: discord.Attachment, title: str = None, private: bool = False):
         """Upload your own music to the bot's library."""
         allowed_extensions = ('.mp3', '.wav', '.ogg', '.flac', '.m4a', '.mp4', '.webm')
         if not any(attachment.filename.lower().endswith(ext) for ext in allowed_extensions) and not (attachment.content_type and any(attachment.content_type.startswith(t) for t in ('audio/', 'video/'))):
@@ -406,50 +434,71 @@ class Music(commands.Cog):
             "uploader_id": str(ctx.author.id),
             "uploader_name": ctx.author.display_name,
             "uploaded_at": int(time.time()),
-            "duration": 0
+            "duration": 0,
+            "is_private": bool(private)
         }
         save_music_index(index)
+
+        # Background sync to Supabase database table & storage bucket
+        asyncio.create_task(asyncio.to_thread(database.upsert_music_track, index["tracks"][track_id]))
+        asyncio.create_task(asyncio.to_thread(database.upload_music_storage, clean_name, filepath))
 
         embed = discord.Embed(
             title="✅ Music Uploaded Successfully!",
             description=f"**Title:** {song_title}\n**Track ID:** `#`{track_id}",
-            color=discord.Color.green()
+            color=discord.Color.green() if not private else discord.Color.gold()
         )
         embed.add_field(name="📁 Filename", value=f"`{attachment.filename}`", inline=True)
         embed.add_field(name="👤 Uploaded By", value=ctx.author.mention, inline=True)
+        embed.add_field(name="🔒 Privacy", value="**Private** (Only you can play/browse)" if private else "**Public** (Shared with server)", inline=True)
         embed.set_footer(text=f"Use /play {song_title} or /play #{track_id} to play this song!")
 
         await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="listmusic", aliases=["mymusic", "uploads"], description="Show all music tracks uploaded to the bot")
-    async def listmusic(self, ctx: commands.Context):
+    @commands.hybrid_command(name="listmusic", aliases=["mymusic", "uploads"], description="Show music tracks uploaded to the bot")
+    @app_commands.describe(private_only="If True, only show your own private/personal uploads")
+    async def listmusic(self, ctx: commands.Context, private_only: bool = False):
         """Show uploaded local music tracks."""
         index = load_music_index()
-        tracks = list(index.get("tracks", {}).values())
+        all_tracks = list(index.get("tracks", {}).values())
 
-        if not tracks:
+        is_admin = ctx.author.guild_permissions.administrator or (ctx.guild and ctx.author == ctx.guild.owner)
+        visible_tracks = []
+        for t in all_tracks:
+            is_priv = t.get("is_private", False)
+            is_owner = (t.get("uploader_id") == str(ctx.author.id))
+            if private_only:
+                if is_owner and is_priv:
+                    visible_tracks.append(t)
+            else:
+                if not is_priv or is_owner or is_admin:
+                    visible_tracks.append(t)
+
+        if not visible_tracks:
             embed = discord.Embed(
                 title="📂 Bot Music Library",
-                description="No music files have been uploaded yet! Use `/uploadmusic` to add some.",
+                description="No matching music files found! Use `/uploadmusic` to add some songs.",
                 color=discord.Color.blurple()
             )
             return await ctx.send(embed=embed)
 
+        title_suffix = " (Your Private Uploads)" if private_only else " (Local Uploads)"
         embed = discord.Embed(
-            title="📂 Bot Music Library (Local Uploads)",
-            description=f"Showing **{len(tracks)}** uploaded track(s). Play them anytime using `/play <title>` or `/play #<ID>`!",
+            title=f"📂 Bot Music Library{title_suffix}",
+            description=f"Showing **{len(visible_tracks)}** track(s). Play them anytime using `/play <title>` or `/play #<ID>`!",
             color=discord.Color.blurple()
         )
 
-        for t in tracks[:15]:  # Display top 15 in embed
+        for t in visible_tracks[:15]:
+            priv_badge = "🔒 [Private] " if t.get("is_private") else ""
             embed.add_field(
-                name=f"Track #{t['id']} — {t['title']}",
+                name=f"Track #{t['id']} — {priv_badge}{t['title']}",
                 value=f"👤 Uploaded by **{t['uploader_name']}** • `<{t['filename']}>`",
                 inline=False
             )
 
-        if len(tracks) > 15:
-            embed.set_footer(text=f"And {len(tracks) - 15} more track(s)...")
+        if len(visible_tracks) > 15:
+            embed.set_footer(text=f"And {len(visible_tracks) - 15} more track(s)...")
 
         await ctx.send(embed=embed)
 
@@ -488,10 +537,49 @@ class Music(commands.Cog):
             logging.warning(f"Could not delete physical file for track {target_id}: {e}")
 
         deleted_title = track_info["title"]
+        deleted_filename = track_info.get("filename", "")
         del tracks[target_id]
         save_music_index(index)
 
+        # Sync deletion to Supabase
+        asyncio.create_task(asyncio.to_thread(database.delete_music_track, target_id, deleted_filename))
+
         await ctx.send(f"🗑️ Successfully deleted track **#{target_id} — {deleted_title}**.")
+
+    @commands.hybrid_command(name="toggleprivacy", description="Toggle an uploaded track between Public and Private")
+    @app_commands.describe(track_identifier="The track ID (e.g. 1) or exact song title to toggle")
+    async def toggleprivacy(self, ctx: commands.Context, track_identifier: str):
+        """Toggle an uploaded track's privacy status."""
+        index = load_music_index()
+        tracks = index.get("tracks", {})
+
+        target_id = None
+        if track_identifier.startswith("#") and track_identifier[1:].isdigit():
+            target_id = track_identifier[1:]
+        elif track_identifier.isdigit() and track_identifier in tracks:
+            target_id = track_identifier
+        else:
+            for tid, tinfo in tracks.items():
+                if tinfo["title"].lower() == track_identifier.lower():
+                    target_id = tid
+                    break
+
+        if not target_id or target_id not in tracks:
+            return await ctx.send("❌ Track not found! Please check `/listmusic` for valid IDs and titles.", ephemeral=True)
+
+        track_info = tracks[target_id]
+        is_mod = ctx.author.guild_permissions.administrator or (ctx.guild and ctx.author == ctx.guild.owner)
+        if track_info["uploader_id"] != str(ctx.author.id) and not is_mod:
+            return await ctx.send("❌ You do not have permission to modify this track's privacy. Only the uploader or an Admin can change it.", ephemeral=True)
+
+        track_info["is_private"] = not track_info.get("is_private", False)
+        save_music_index(index)
+
+        # Sync privacy status to Supabase
+        asyncio.create_task(asyncio.to_thread(database.upsert_music_track, track_info))
+
+        status = "🔒 **Private** (Only you can play/browse)" if track_info["is_private"] else "🌐 **Public** (Shared with server)"
+        await ctx.send(f"✅ Privacy updated for track **#{target_id} — {track_info['title']}**:\nNew Status: {status}")
 
     # ==================== Playback Commands ====================
 
@@ -520,9 +608,10 @@ class Music(commands.Cog):
     @commands.hybrid_command(name="play", aliases=["p"], description="Play a local uploaded song, YouTube link, search query, or attached file")
     @app_commands.describe(
         query="Song title from local library, YouTube URL, or search query",
-        attachment="Optional audio file attachment to play directly"
+        attachment="Optional audio file attachment to play directly",
+        private="Set to True if uploading via attachment and you want it marked Private"
     )
-    async def play(self, ctx: commands.Context, query: str = None, attachment: discord.Attachment = None):
+    async def play(self, ctx: commands.Context, query: str = None, attachment: discord.Attachment = None, private: bool = False):
         """Play audio from upload, library, or YouTube."""
         if not ctx.author.voice or not ctx.author.voice.channel:
             return await ctx.send("❌ You must be inside a voice channel to play music!", ephemeral=True)
@@ -563,9 +652,14 @@ class Music(commands.Cog):
                     "uploader_id": str(ctx.author.id),
                     "uploader_name": ctx.author.display_name,
                     "uploaded_at": int(time.time()),
-                    "duration": 0
+                    "duration": 0,
+                    "is_private": bool(private)
                 }
                 save_music_index(index)
+
+                # Background sync to Supabase
+                asyncio.create_task(asyncio.to_thread(database.upsert_music_track, index["tracks"][track_id]))
+                asyncio.create_task(asyncio.to_thread(database.upload_music_storage, clean_name, filepath))
 
                 tracks_to_add.append({
                     'title': song_title,
@@ -605,7 +699,18 @@ class Music(commands.Cog):
                             break
 
             if local_match:
-                # Ensure physical file still exists
+                is_priv = local_match.get("is_private", False)
+                is_owner = (local_match.get("uploader_id") == str(ctx.author.id))
+                is_admin = ctx.author.guild_permissions.administrator or (ctx.guild and ctx.author == ctx.guild.owner)
+                if is_priv and not is_owner and not is_admin:
+                    return await ctx.send(f"🔒 **{local_match['title']}** (Track #{local_match['id']}) is marked as **Private** by its uploader (`{local_match['uploader_name']}`) and cannot be played by others.", ephemeral=True)
+
+                # If local file is missing, attempt auto-recovery from Supabase storage
+                if not os.path.exists(local_match["filepath"]):
+                    await ctx.send(f"📥 Downloading **{local_match['title']}** from Supabase cloud storage...")
+                    await asyncio.to_thread(database.download_music_storage, local_match["filename"], local_match["filepath"])
+
+                # Ensure physical file still exists after attempted download
                 if os.path.exists(local_match["filepath"]):
                     tracks_to_add.append({
                         'title': local_match["title"],
@@ -617,7 +722,7 @@ class Music(commands.Cog):
                         'is_local': True
                     })
                 else:
-                    await ctx.send(f"⚠️ Local file for **{local_match['title']}** was missing from disk. Searching YouTube instead...")
+                    await ctx.send(f"⚠️ Cloud file for **{local_match['title']}** was missing. Searching YouTube instead...")
                     local_match = None
 
             if not local_match and not attachment:

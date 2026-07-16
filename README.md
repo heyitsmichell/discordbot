@@ -133,22 +133,23 @@ python main.py
 | `@Bot`     | Mention the bot to chat        | `@Bot hello!`      |
 
 ### Music Commands
-|     Command     |               Description               |             Usage              |
-|-----------------|-----------------------------------------|--------------------------------|
-| `/join`         | Join your current voice channel         | `/join`                        |
-| `/leave`        | Leave voice channel & clear queue       | `/leave`                       |
-| `/uploadmusic`  | Upload local music file (`.mp3`, etc.)  | `/uploadmusic <file> [title]`  |
-| `/listmusic`    | Show all uploaded tracks in library     | `/listmusic`                   |
-| `/deletemusic`  | Delete an uploaded track by ID or title | `/deletemusic <id_or_title>`   |
-| `/play`         | Play local track, YouTube URL, or query | `/play <song/URL/query>`       |
-| `/nowplaying`   | Show current song with UI controls      | `/nowplaying`                  |
-| `/queue`        | Show current music queue                | `/queue`                       |
-| `/pause`        | Pause current music playback            | `/pause`                       |
-| `/resume`       | Resume paused music playback            | `/resume`                      |
-| `/skip`         | Skip the currently playing song         | `/skip`                        |
-| `/stop`         | Stop playback and clear queue           | `/stop`                        |
-| `/loop`         | Toggle loop mode (OFF, TRACK, QUEUE)    | `/loop [mode]`                 |
-| `/volume`       | Adjust playback volume (1-100%)         | `/volume <level>`              |
+|     Command      |                 Description                 |                  Usage                   |
+|------------------|---------------------------------------------|------------------------------------------|
+| `/join`          | Join your current voice channel             | `/join`                                  |
+| `/leave`         | Leave voice channel & clear queue           | `/leave`                                 |
+| `/uploadmusic`   | Upload local music file (`.mp3`, etc.)      | `/uploadmusic <file> [title] [private]`  |
+| `/listmusic`     | Show uploaded tracks or private library     | `/listmusic [private_only]`              |
+| `/toggleprivacy` | Toggle track between Public and Private     | `/toggleprivacy <id_or_title>`           |
+| `/deletemusic`   | Delete an uploaded track by ID or title     | `/deletemusic <id_or_title>`             |
+| `/play`          | Play local track, YouTube URL, or query     | `/play <song/URL/query> [attachment]`    |
+| `/nowplaying`    | Show current song with UI controls          | `/nowplaying`                            |
+| `/queue`         | Show current music queue                    | `/queue`                                 |
+| `/pause`         | Pause current music playback                | `/pause`                                 |
+| `/resume`        | Resume paused music playback                | `/resume`                                |
+| `/skip`          | Skip the currently playing song             | `/skip`                                  |
+| `/stop`          | Stop playback and clear queue               | `/stop`                                  |
+| `/loop`          | Toggle loop mode (OFF, TRACK, QUEUE)        | `/loop [mode]`                           |
+| `/volume`        | Adjust playback volume (1-100%)             | `/volume <level>`                        |
 
 ### Administrator Commands
 
@@ -262,6 +263,7 @@ Automatically adjusts channel slowmode based on message activity:
 ### Music & Audio System
 
 - **Local Music Uploads**: Users can upload audio files (`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`) directly to the bot (`/uploadmusic`), storing them locally in `src/data/music/files/` and indexing them in `library.json`.
+- **Privacy Controls**: Users can mark uploaded songs as **Private** when uploading (`private:True`) or anytime after via `/toggleprivacy <id_or_title>`. Private tracks can only be browsed or played by their original uploader (`/listmusic private_only:True`).
 - **YouTube & Search Support**: Powered by `yt-dlp`, users can stream audio directly from YouTube URLs or search queries (`/play lofi hip hop`).
 - **Interactive Playback UI**: The `/nowplaying` command sends a rich embed with clickable buttons (`⏸️ Pause/Resume`, `⏭️ Skip`, `🔂 Loop`, `⏹️ Stop`).
 - **Queue & Loop Management**: Full playlist queueing with loop options (`Off`, `Single Track`, `Queue`) and automatic inactivity disconnects after 5 minutes of idle time.
@@ -310,6 +312,21 @@ Automatically adjusts channel slowmode based on message activity:
 **birthday_channels**
 - `guild_id` (TEXT PRIMARY KEY)
 - `channel_id` (TEXT)
+
+**music_tracks**
+- `track_id` (TEXT PRIMARY KEY)
+- `title` (TEXT)
+- `filename` (TEXT)
+- `uploader_id` (TEXT)
+- `uploader_name` (TEXT)
+- `uploaded_at` (INTEGER)
+- `duration` (INTEGER)
+- `is_private` (BOOLEAN)
+
+### Storage Buckets
+
+**music**
+- Public or private Supabase Storage bucket (`music`) used for cloud backup and hybrid caching of user-uploaded audio tracks (`.mp3`, `.wav`, etc.).
 
 ## API Endpoints
 
