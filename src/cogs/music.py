@@ -429,7 +429,6 @@ class GuildMusicPlayer:
         self.is_paused: bool = False
         self.loop_mode: str = "OFF"  # OFF, TRACK, QUEUE
         self.volume: float = 1.0
-        self.inactivity_task: asyncio.Task | None = None
         self.channel_for_updates: discord.TextChannel | None = None
         self.last_np_message: discord.Message | None = None
 
@@ -449,12 +448,7 @@ class GuildMusicPlayer:
             except Exception as e:
                 logging.warning(f"Could not configure Opus encoder settings: {e}")
 
-        self.reset_inactivity_timer()
-
     async def disconnect(self):
-        if self.inactivity_task:
-            self.inactivity_task.cancel()
-            self.inactivity_task = None
         if self.last_np_message:
             try:
                 await self.last_np_message.delete()
@@ -469,25 +463,8 @@ class GuildMusicPlayer:
             await self.voice_client.disconnect()
         self.voice_client = None
 
-    def reset_inactivity_timer(self):
-        if self.inactivity_task:
-            self.inactivity_task.cancel()
-        self.inactivity_task = self.bot.loop.create_task(self.inactivity_check())
-
-    async def inactivity_check(self):
-        await asyncio.sleep(300)  # 5 minutes idle timeout
-        if not self.is_playing and (not self.voice_client or not self.voice_client.is_playing()):
-            if self.channel_for_updates:
-                try:
-                    await self.channel_for_updates.send("💤 Left voice channel due to 5 minutes of inactivity.")
-                except Exception:
-                    pass
-            await self.disconnect()
-
     def add_to_queue(self, track: dict):
         self.queue.append(track)
-        if self.inactivity_task:
-            self.inactivity_task.cancel()
 
     async def create_audio_source(self, track: dict) -> discord.AudioSource:
         ffmpeg_executable = get_ffmpeg_path()
@@ -548,14 +525,11 @@ class GuildMusicPlayer:
             self.current_track = None
             self.is_playing = False
             self.is_paused = False
-            self.reset_inactivity_timer()
             return
 
         self.current_track = track_to_play
         self.is_playing = True
         self.is_paused = False
-        if self.inactivity_task:
-            self.inactivity_task.cancel()
 
         # Check if we need to refresh stream URL (for non-local tracks older than 1 hour or expired URLs)
         if not track_to_play.get('is_local') and yt_dlp:
