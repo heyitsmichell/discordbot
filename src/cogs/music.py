@@ -16,6 +16,11 @@ try:
 except ImportError:
     yt_dlp = None
 
+try:
+    import imageio_ffmpeg
+except ImportError:
+    imageio_ffmpeg = None
+
 # Setup directory structure for local music storage
 MUSIC_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'music')
 MUSIC_FILES_DIR = os.path.join(MUSIC_DATA_DIR, 'files')
@@ -75,10 +80,41 @@ def save_music_index(data: dict):
 
 
 def get_ffmpeg_path() -> str:
+    if imageio_ffmpeg:
+        try:
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+            if exe and os.path.exists(exe):
+                return exe
+        except Exception as e:
+            logging.warning(f"Could not load bundled ffmpeg from imageio_ffmpeg: {e}")
+
     for path in ['/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg', 'ffmpeg']:
         if os.path.exists(path) or path == 'ffmpeg':
             return path
     return 'ffmpeg'
+
+
+def ensure_opus_loaded():
+    if not discord.opus.is_loaded():
+        for path in [
+            '/opt/homebrew/lib/libopus.dylib',
+            '/opt/homebrew/lib/libopus.0.dylib',
+            '/usr/local/lib/libopus.dylib',
+            '/usr/local/lib/libopus.0.dylib',
+            'libopus.dylib',
+            'libopus.so.0',
+            'libopus.so',
+            'opus.dll'
+        ]:
+            if os.path.exists(path):
+                try:
+                    discord.opus.load_opus(path)
+                    logging.info(f"Loaded Opus library from {path}")
+                    break
+                except Exception as e:
+                    logging.warning(f"Failed to load Opus from {path}: {e}")
+
+ensure_opus_loaded()
 
 
 def format_duration(seconds: int | float) -> str:
@@ -459,6 +495,8 @@ class Music(commands.Cog):
     @app_commands.describe(private_only="If True, only show your own private/personal uploads")
     async def listmusic(self, ctx: commands.Context, private_only: bool = False):
         """Show uploaded local music tracks."""
+        if ctx.interaction:
+            await ctx.defer()
         index = load_music_index()
         all_tracks = list(index.get("tracks", {}).values())
 
@@ -506,6 +544,8 @@ class Music(commands.Cog):
     @app_commands.describe(track_identifier="The track ID (e.g. 1) or exact song title to delete")
     async def deletemusic(self, ctx: commands.Context, track_identifier: str):
         """Delete an uploaded track."""
+        if ctx.interaction:
+            await ctx.defer()
         index = load_music_index()
         tracks = index.get("tracks", {})
 
@@ -550,6 +590,8 @@ class Music(commands.Cog):
     @app_commands.describe(track_identifier="The track ID (e.g. 1) or exact song title to toggle")
     async def toggleprivacy(self, ctx: commands.Context, track_identifier: str):
         """Toggle an uploaded track's privacy status."""
+        if ctx.interaction:
+            await ctx.defer()
         index = load_music_index()
         tracks = index.get("tracks", {})
 
@@ -586,17 +628,27 @@ class Music(commands.Cog):
     @commands.hybrid_command(name="join", description="Make the bot join your current voice channel")
     async def join(self, ctx: commands.Context):
         """Join author's voice channel."""
+        if ctx.interaction:
+            await ctx.defer()
+
         if not ctx.author.voice or not ctx.author.voice.channel:
             return await ctx.send("❌ You must be in a voice channel first!", ephemeral=True)
 
         player = self.get_player(ctx.guild)
         player.channel_for_updates = ctx.channel
-        await player.connect(ctx.author.voice.channel)
-        await ctx.send(f"🔊 Joined **{ctx.author.voice.channel.name}**!")
+        try:
+            await player.connect(ctx.author.voice.channel)
+            await ctx.send(f"🔊 Joined **{ctx.author.voice.channel.name}**!")
+        except Exception as e:
+            logging.error(f"Voice connect error: {e}")
+            await ctx.send(f"❌ Could not connect to voice: `{e}`")
 
     @commands.hybrid_command(name="leave", aliases=["disconnect"], description="Disconnect the bot from voice and clear the queue")
     async def leave(self, ctx: commands.Context):
         """Leave voice channel."""
+        if ctx.interaction:
+            await ctx.defer()
+
         player = self.get_player(ctx.guild)
         if not player.voice_client or not player.voice_client.is_connected():
             return await ctx.send("❌ Bot is not currently in a voice channel.", ephemeral=True)

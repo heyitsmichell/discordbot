@@ -10,3 +10,4 @@ pytz
 google-genai
 PyNaCl
 yt-dlp
+imageio-ffmpeg

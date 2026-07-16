@@ -262,6 +262,7 @@ Automatically adjusts channel slowmode based on message activity:
 
 ### Music & Audio System
 
+- **Portable Audio Engine**: Bundled with `imageio-ffmpeg` and cross-platform Opus detection (`libopus` / `opus.dll`), allowing the bot to run out-of-the-box on Windows, macOS, and Linux without requiring manual system FFmpeg path setup.
 - **Local Music Uploads**: Users can upload audio files (`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`) directly to the bot (`/uploadmusic`), storing them locally in `src/data/music/files/` and indexing them in `library.json`.
 - **Privacy Controls**: Users can mark uploaded songs as **Private** when uploading (`private:True`) or anytime after via `/toggleprivacy <id_or_title>`. Private tracks can only be browsed or played by their original uploader (`/listmusic private_only:True`).
 - **YouTube & Search Support**: Powered by `yt-dlp`, users can stream audio directly from YouTube URLs or search queries (`/play lofi hip hop`).
