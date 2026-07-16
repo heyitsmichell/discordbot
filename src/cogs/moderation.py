@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import time
 import asyncio
+import re
 from database import get_guild_settings, save_guild_settings
 from utils.helpers import log_to_channel
 from dotenv import load_dotenv
@@ -21,6 +22,26 @@ class Moderation(commands.Cog):
         self.user_message_logs = {}
         # Track reactions: key = (channel_id, message_id, user_id, emoji_str), value = timestamp
         self.reaction_timestamps = {}
+        self.compiled_regex_cache = {}
+
+    def get_compiled_regex(self, guild_id: int, key_type: str, word_list: list):
+        if not word_list:
+            return None
+        cache_key = (guild_id, key_type)
+        words_tuple = tuple(sorted(set(w.lower() for w in word_list if w)))
+        if not words_tuple:
+            return None
+        if cache_key in self.compiled_regex_cache:
+            cached_tuple, cached_re = self.compiled_regex_cache[cache_key]
+            if cached_tuple == words_tuple:
+                return cached_re
+
+        pattern = r'|'.join(re.escape(w) for w in words_tuple)
+        if not pattern:
+            return None
+        compiled = re.compile(pattern, re.IGNORECASE)
+        self.compiled_regex_cache[cache_key] = (words_tuple, compiled)
+        return compiled
     
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
@@ -143,14 +164,16 @@ class Moderation(commands.Cog):
             current_time = time.time()
             
             bad_words = guild_settings.get("bad_words", config.DEFAULT_BAD_WORDS)
-            if any(w in content_lower for w in bad_words):
-                try: 
-                    await message.delete()
-                except: 
-                    pass
-                await self.warn_user(author, "Inappropriate language.")
-                return
-            
+            if bad_words:
+                bad_words_re = self.get_compiled_regex(guild.id, "bad_words", bad_words)
+                if bad_words_re and bad_words_re.search(content_lower):
+                    try: 
+                        await message.delete()
+                    except: 
+                        pass
+                    await self.warn_user(author, "Inappropriate language.")
+                    return
+
             # caps_threshold = float(guild_settings.get("caps_threshold", config.DEFAULT_CAPS_THRESHOLD))
             # if content and len(content) > 10:
             #     letters = [c for c in content if c.isalpha()]
@@ -165,13 +188,15 @@ class Moderation(commands.Cog):
             #             return
 
             banned_links = guild_settings.get("banned_links", config.DEFAULT_BANNED_LINKS)
-            if any(bad_link in content_lower for bad_link in banned_links):
-                try: 
-                    await message.delete()
-                except: 
-                    pass
-                await self.warn_user(author, "Posting invite or banned links.")
-                return
+            if banned_links:
+                banned_links_re = self.get_compiled_regex(guild.id, "banned_links", banned_links)
+                if banned_links_re and banned_links_re.search(content_lower):
+                    try: 
+                        await message.delete()
+                    except: 
+                        pass
+                    await self.warn_user(author, "Posting invite or banned links.")
+                    return
             
             spam_window = int(guild_settings.get("spam_window", config.DEFAULT_SPAM_WINDOW))
             spam_threshold = int(guild_settings.get("spam_threshold", config.DEFAULT_SPAM_THRESHOLD))

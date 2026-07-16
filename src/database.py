@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from dotenv import load_dotenv
 from supabase import create_client, Client, ClientOptions
 import config
@@ -18,6 +19,7 @@ else:
 
 TIMEZONES_CACHE = None
 BIRTHDAYS_CACHE = None
+GUILD_SETTINGS_CACHE: dict[str, tuple[float, dict]] = {}
 
 def format_supabase_error(e: Exception) -> str:
     err_str = str(e)
@@ -37,15 +39,23 @@ def ensure_users_has_twitch_id():
     pass
 
 def get_guild_settings(guild_id: int) -> dict:
+    global GUILD_SETTINGS_CACHE
+    gid_str = str(guild_id)
+    now = time.time()
+    if gid_str in GUILD_SETTINGS_CACHE:
+        cached_time, cached_data = GUILD_SETTINGS_CACHE[gid_str]
+        if now - cached_time < 60:
+            return cached_data
+
     try:
-        response = supabase.table("guild_settings").select("*").eq("guild_id", str(guild_id)).execute()
+        response = supabase.table("guild_settings").select("*").eq("guild_id", gid_str).execute()
         data = response.data
     except Exception as e:
         print(f"Error fetching guild settings: {format_supabase_error(e)}")
         data = []
 
     if not data:
-        return {
+        default_settings = {
             "autoslow_enabled": True,
             "check_frequency": config.DEFAULT_CHECK_FREQUENCY,
             "time_configs": config.DEFAULT_TIME_CONFIGS.copy(),
@@ -61,6 +71,8 @@ def get_guild_settings(guild_id: int) -> dict:
             "join_window": config.DEFAULT_JOIN_WINDOW,
             "min_account_age_days": config.DEFAULT_ACCOUNT_AGE_DAYS
         }
+        GUILD_SETTINGS_CACHE[gid_str] = (now, default_settings)
+        return default_settings
 
     row = data[0]
 
@@ -72,7 +84,7 @@ def get_guild_settings(guild_id: int) -> dict:
         except Exception:
             return default
 
-    return {
+    parsed_settings = {
         "autoslow_enabled": bool(row.get("autoslow_enabled", 1)),
         "check_frequency": int(row.get("check_frequency") or config.DEFAULT_CHECK_FREQUENCY),
         "time_configs": _parse(row.get("time_configs"), config.DEFAULT_TIME_CONFIGS.copy()),
@@ -88,10 +100,14 @@ def get_guild_settings(guild_id: int) -> dict:
         "join_window": int(row.get("join_window") or config.DEFAULT_JOIN_WINDOW),
         "min_account_age_days": int(row.get("min_account_age_days") or config.DEFAULT_ACCOUNT_AGE_DAYS)
     }
+    GUILD_SETTINGS_CACHE[gid_str] = (now, parsed_settings)
+    return parsed_settings
 
 def save_guild_settings(guild_id: int, settings: dict):
+    global GUILD_SETTINGS_CACHE
+    gid_str = str(guild_id)
     data_to_insert = {
-        "guild_id": str(guild_id),
+        "guild_id": gid_str,
         "autoslow_enabled": 1 if settings.get("autoslow_enabled", True) else 0,
         "check_frequency": int(settings.get("check_frequency", config.DEFAULT_CHECK_FREQUENCY)),
         "time_configs": json.dumps(settings.get("time_configs", config.DEFAULT_TIME_CONFIGS)),
@@ -110,6 +126,7 @@ def save_guild_settings(guild_id: int, settings: dict):
 
     try:
         supabase.table("guild_settings").upsert(data_to_insert).execute()
+        GUILD_SETTINGS_CACHE[gid_str] = (time.time(), settings.copy())
     except Exception as e:
         print(f"Error saving guild settings: {format_supabase_error(e)}")
 
