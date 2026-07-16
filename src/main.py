@@ -14,9 +14,10 @@ import config
 # Load environment variables
 load_dotenv()
 
-# Setup logging
-handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='a')
-logging.basicConfig(level=logging.INFO, handlers=[handler])
+# Setup logging - output to both file and console (for Render visibility)
+file_handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='a')
+stream_handler = logging.StreamHandler()
+logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
 
 # Bot setup
 intents = discord.Intents.default()
@@ -48,10 +49,10 @@ async def load_extensions():
         try:
             await bot.load_extension(cog)
             logging.info(f"Loaded {cog}")
-            print(f"✅ Loaded {cog}")
+            print(f"✅ Loaded {cog}", flush=True)
         except Exception as e:
             logging.error(f"Failed to load {cog}: {e}")
-            print(f"❌ Failed to load {cog}: {e}")
+            print(f"❌ Failed to load {cog}: {e}", flush=True)
             import traceback
             traceback.print_exc()
 
