@@ -857,6 +857,50 @@ class Music(commands.Cog):
         status = "🔒 **Private** (Only you can play/browse)" if track_info["is_private"] else "🌐 **Public** (Shared with server)"
         await ctx.send(f"✅ Privacy updated for track **#{target_id} — {track_info['title']}**:\nNew Status: {status}")
 
+    @commands.hybrid_command(name="renamemusic", description="Rename an uploaded music track by ID or exact title")
+    @app_commands.describe(
+        track_identifier="The track ID (e.g. 1) or current exact song title to rename",
+        new_title="The new title for this track"
+    )
+    async def renamemusic(self, ctx: commands.Context, track_identifier: str, new_title: str):
+        """Rename an uploaded track."""
+        if ctx.interaction:
+            await ctx.defer()
+        index = load_music_index()
+        tracks = index.get("tracks", {})
+
+        target_id = None
+        if track_identifier.startswith("#") and track_identifier[1:].isdigit():
+            target_id = track_identifier[1:]
+        elif track_identifier.isdigit() and track_identifier in tracks:
+            target_id = track_identifier
+        else:
+            for tid, tinfo in tracks.items():
+                if tinfo["title"].lower() == track_identifier.lower():
+                    target_id = tid
+                    break
+
+        if not target_id or target_id not in tracks:
+            return await ctx.send("❌ Track not found! Please check `/listmusic` for valid IDs and titles.", ephemeral=True)
+
+        track_info = tracks[target_id]
+        is_mod = ctx.author.guild_permissions.administrator or (ctx.guild and ctx.author == ctx.guild.owner)
+        if track_info["uploader_id"] != str(ctx.author.id) and not is_mod:
+            return await ctx.send("❌ You do not have permission to rename this track. Only the uploader or an Admin can rename it.", ephemeral=True)
+
+        clean_new_title = new_title.strip()
+        if not clean_new_title:
+            return await ctx.send("❌ Please provide a valid new title.", ephemeral=True)
+
+        old_title = track_info["title"]
+        track_info["title"] = clean_new_title
+        save_music_index(index)
+
+        # Sync new title to Supabase
+        asyncio.create_task(asyncio.to_thread(database.upsert_music_track, track_info))
+
+        await ctx.send(f"✏️ Successfully renamed track **#{target_id}**:\n**Old Title:** `{old_title}`\n**New Title:** `{clean_new_title}`")
+
     # ==================== Playback Commands ====================
 
     @commands.hybrid_command(name="join", description="Make the bot join your current voice channel")
