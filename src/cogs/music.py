@@ -6,6 +6,7 @@ import asyncio
 import os
 import json
 import time
+import random
 import logging
 import urllib.parse
 from datetime import timedelta
@@ -386,6 +387,31 @@ class Music(commands.Cog):
         if guild.id not in self.players:
             self.players[guild.id] = GuildMusicPlayer(self.bot, guild.id)
         return self.players[guild.id]
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        # If the bot itself was forcibly disconnected from voice by a moderator or server event
+        if member.id == self.bot.user.id:
+            if before.channel and not after.channel:
+                if before.channel.guild.id in self.players:
+                    player = self.players[before.channel.guild.id]
+                    await player.disconnect()
+            return
+
+        # If a user left the channel the bot is currently inside
+        if before.channel and member.id != self.bot.user.id:
+            if before.channel.guild.id in self.players:
+                player = self.players[before.channel.guild.id]
+                if player.voice_client and player.voice_client.channel and player.voice_client.channel.id == before.channel.id:
+                    # Check if only bots remain in the channel
+                    non_bots = [m for m in before.channel.members if not m.bot]
+                    if len(non_bots) == 0:
+                        if player.channel_for_updates:
+                            try:
+                                await player.channel_for_updates.send("💤 All users left the voice channel. Disconnecting to save resources.")
+                            except Exception:
+                                pass
+                        await player.disconnect()
 
     async def extract_web_track(self, query: str, requester: discord.Member) -> list[dict]:
         if not yt_dlp:
@@ -820,6 +846,9 @@ class Music(commands.Cog):
     @commands.hybrid_command(name="nowplaying", aliases=["np"], description="Show currently playing track and interactive controls")
     async def nowplaying(self, ctx: commands.Context):
         """Show currently playing song."""
+        if ctx.interaction:
+            await ctx.defer()
+
         player = self.get_player(ctx.guild)
         if not player.current_track:
             return await ctx.send("❌ Nothing is currently playing right now.", ephemeral=True)
@@ -846,6 +875,9 @@ class Music(commands.Cog):
     @commands.hybrid_command(name="queue", aliases=["q"], description="Show the current music queue")
     async def queue(self, ctx: commands.Context):
         """Show the current queue."""
+        if ctx.interaction:
+            await ctx.defer()
+
         player = self.get_player(ctx.guild)
         if not player.current_track and not player.queue:
             return await ctx.send("📭 The music queue is completely empty right now. Add songs using `/play`!")
@@ -877,9 +909,42 @@ class Music(commands.Cog):
         embed.add_field(name="⚙️ Settings", value=f"**Loop Mode:** `{player.loop_mode}` | **Volume:** `{int(player.volume * 100)}%`", inline=False)
         await ctx.send(embed=embed)
 
+    @commands.hybrid_command(name="shuffle", aliases=["shuf"], description="Randomly shuffle all tracks waiting in the queue")
+    async def shuffle(self, ctx: commands.Context):
+        """Shuffle the current music queue."""
+        if ctx.interaction:
+            await ctx.defer()
+
+        player = self.get_player(ctx.guild)
+        if not player.queue or len(player.queue) < 2:
+            return await ctx.send("⚠️ You need at least 2 tracks in the queue to shuffle!", ephemeral=True)
+
+        random.shuffle(player.queue)
+        await ctx.send(f"🔀 Shuffled **{len(player.queue)}** tracks in the queue!")
+
+    @commands.hybrid_command(name="remove", aliases=["rmqueue", "rq"], description="Remove a specific song from the queue by its position number")
+    @app_commands.describe(position="The number of the song in the queue (e.g. 1 for next song)")
+    async def remove(self, ctx: commands.Context, position: int):
+        """Remove a track from the queue by position."""
+        if ctx.interaction:
+            await ctx.defer()
+
+        player = self.get_player(ctx.guild)
+        if not player.queue:
+            return await ctx.send("❌ The queue is empty right now.", ephemeral=True)
+
+        if position < 1 or position > len(player.queue):
+            return await ctx.send(f"❌ Invalid position! Please choose a number between 1 and {len(player.queue)}.", ephemeral=True)
+
+        removed = player.queue.pop(position - 1)
+        await ctx.send(f"🗑️ Removed **{removed['title']}** from position #{position} in the queue.")
+
     @commands.hybrid_command(name="skip", aliases=["fs", "s"], description="Skip the currently playing song")
     async def skip(self, ctx: commands.Context):
         """Skip currently playing track."""
+        if ctx.interaction:
+            await ctx.defer()
+
         player = self.get_player(ctx.guild)
         if not player.voice_client or not player.current_track:
             return await ctx.send("❌ Nothing is playing right now.", ephemeral=True)
@@ -891,6 +956,9 @@ class Music(commands.Cog):
     @commands.hybrid_command(name="pause", description="Pause current music playback")
     async def pause(self, ctx: commands.Context):
         """Pause playback."""
+        if ctx.interaction:
+            await ctx.defer()
+
         player = self.get_player(ctx.guild)
         if not player.voice_client or not player.current_track:
             return await ctx.send("❌ Nothing is playing right now.", ephemeral=True)
@@ -904,6 +972,9 @@ class Music(commands.Cog):
     @commands.hybrid_command(name="resume", description="Resume paused music playback")
     async def resume(self, ctx: commands.Context):
         """Resume paused playback."""
+        if ctx.interaction:
+            await ctx.defer()
+
         player = self.get_player(ctx.guild)
         if not player.voice_client or not player.current_track:
             return await ctx.send("❌ Nothing is playing right now.", ephemeral=True)
@@ -917,6 +988,9 @@ class Music(commands.Cog):
     @commands.hybrid_command(name="stop", description="Stop playback and clear the entire music queue")
     async def stop(self, ctx: commands.Context):
         """Stop playing and clear queue."""
+        if ctx.interaction:
+            await ctx.defer()
+
         player = self.get_player(ctx.guild)
         if not player.voice_client:
             return await ctx.send("❌ Bot is not in a voice channel.", ephemeral=True)
@@ -930,6 +1004,9 @@ class Music(commands.Cog):
     @app_commands.describe(mode="Optional specific loop mode: OFF, TRACK, or QUEUE")
     async def loop(self, ctx: commands.Context, mode: str = None):
         """Toggle loop mode."""
+        if ctx.interaction:
+            await ctx.defer()
+
         player = self.get_player(ctx.guild)
         if mode:
             mode_upper = mode.upper()
@@ -951,6 +1028,9 @@ class Music(commands.Cog):
     @app_commands.describe(level="Volume percentage between 1 and 100")
     async def volume(self, ctx: commands.Context, level: int):
         """Adjust volume."""
+        if ctx.interaction:
+            await ctx.defer()
+
         if level < 1 or level > 100:
             return await ctx.send("❌ Volume must be between 1 and 100!", ephemeral=True)
 

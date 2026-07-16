@@ -267,7 +267,7 @@ Automatically adjusts channel slowmode based on message activity:
 - **Privacy Controls**: Users can mark uploaded songs as **Private** when uploading (`private:True`) or anytime after via `/toggleprivacy <id_or_title>`. Private tracks can only be browsed or played by their original uploader (`/listmusic private_only:True`).
 - **YouTube & Search Support**: Powered by `yt-dlp`, users can stream audio directly from YouTube URLs or search queries (`/play lofi hip hop`).
 - **Interactive Playback UI**: The `/nowplaying` command sends a rich embed with clickable buttons (`⏸️ Pause/Resume`, `⏭️ Skip`, `🔂 Loop`, `⏹️ Stop`).
-- **Queue & Loop Management**: Full playlist queueing with loop options (`Off`, `Single Track`, `Queue`) and automatic inactivity disconnects after 5 minutes of idle time.
+- **Queue & Loop Management**: Full playlist queueing (`/queue`), playlist shuffling (`/shuffle`), track removal by position (`/remove <position>`), and loop options (`Off`, `Single Track`, `Queue`), plus automatic disconnects when the voice channel is empty or after 5 minutes of idle time.
 
 ## Database Schema
 

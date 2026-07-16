@@ -120,6 +120,7 @@ def get_help_embed() -> discord.Embed:
             "`/deletemusic <id>` – Delete your uploaded song\n"
             "`/nowplaying` (`/np`) – Show current song with interactive controls\n"
             "`/queue` (`/q`) – Show upcoming songs waiting in line\n"
+            "`/shuffle` (`/shuf`) | `/remove <position>` – Shuffle queue or remove a specific track\n"
             "`/pause` | `/resume` – Pause or continue music playback\n"
             "`/skip` | `/stop` – Skip current track or stop playing\n"
             "`/loop [OFF/TRACK/QUEUE]` – Toggle loop mode\n"
