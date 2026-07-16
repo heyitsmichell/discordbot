@@ -118,6 +118,28 @@ def ensure_opus_loaded():
 ensure_opus_loaded()
 
 
+def get_ydl_opts(extract_flat: bool = False) -> dict:
+    opts = {
+        'format': 'bestaudio/best',
+        'noplaylist': True,
+        'quiet': True,
+        'default_search': 'auto',
+        'extract_flat': extract_flat,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'web']
+            }
+        }
+    }
+    cookies_browser = os.getenv('YT_COOKIES_BROWSER')
+    cookies_file = os.getenv('YT_COOKIES_FILE')
+    if cookies_browser:
+        opts['cookiesfrombrowser'] = (cookies_browser,)
+    elif cookies_file and os.path.exists(cookies_file):
+        opts['cookiefile'] = cookies_file
+    return opts
+
+
 def format_duration(seconds: int | float) -> str:
     if not seconds or seconds <= 0:
         return "Unknown / Live"
@@ -330,12 +352,7 @@ class GuildMusicPlayer:
             try:
                 # Re-extract fresh stream URL if needed
                 loop = asyncio.get_event_loop()
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    'noplaylist': True,
-                    'quiet': True,
-                    'extract_flat': False
-                }
+                ydl_opts = get_ydl_opts()
                 info = await loop.run_in_executor(
                     None,
                     lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(track_to_play['webpage_url'], download=False)
@@ -418,22 +435,26 @@ class Music(commands.Cog):
             raise RuntimeError("yt-dlp is not installed or available on this bot.")
 
         loop = asyncio.get_event_loop()
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'noplaylist': True,
-            'quiet': True,
-            'default_search': 'auto',
-            'extract_flat': False
-        }
+        ydl_opts = get_ydl_opts()
 
-        # Check if it's a direct URL or search term
-        if not (query.startswith("http://") or query.startswith("https://")):
-            query = f"ytsearch1:{query}"
+        is_url = query.startswith("http://") or query.startswith("https://")
+        search_query = query if is_url else f"ytsearch1:{query}"
 
-        info = await loop.run_in_executor(
-            None,
-            lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(query, download=False)
-        )
+        try:
+            info = await loop.run_in_executor(
+                None,
+                lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(search_query, download=False)
+            )
+        except Exception as e:
+            if not is_url:
+                logging.warning(f"YouTube search failed or required sign-in for '{query}' ({e}). Falling back to SoundCloud...")
+                sc_query = f"scsearch1:{query}"
+                info = await loop.run_in_executor(
+                    None,
+                    lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(sc_query, download=False)
+                )
+            else:
+                raise e
 
         if not info:
             return []
