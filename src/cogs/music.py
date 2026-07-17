@@ -258,6 +258,7 @@ class NowPlayingView(View):
             return await interaction.response.send_message("❌ Nothing is currently playing.", ephemeral=True)
         
         await interaction.response.send_message("⏭️ Skipped current track!", ephemeral=True)
+        self.player.skip_requested = True
         self.player.voice_client.stop()
 
     async def on_loop(self, interaction: discord.Interaction):
@@ -429,6 +430,7 @@ class GuildMusicPlayer:
         self.is_paused: bool = False
         self.loop_mode: str = "OFF"  # OFF, TRACK, QUEUE
         self.volume: float = 1.0
+        self.skip_requested: bool = False
         self.channel_for_updates: discord.TextChannel | None = None
         self.last_np_message: discord.Message | None = None
 
@@ -500,8 +502,11 @@ class GuildMusicPlayer:
             self.is_playing = False
             return
 
+        skip_req = self.skip_requested
+        self.skip_requested = False
+
         # Handle loop modes
-        if self.loop_mode == "TRACK" and self.current_track:
+        if self.loop_mode == "TRACK" and self.current_track and not skip_req:
             track_to_play = self.current_track
         elif self.loop_mode == "QUEUE" and self.current_track:
             self.queue.append(self.current_track)
@@ -1301,6 +1306,7 @@ class Music(commands.Cog):
             return await ctx.send("❌ Nothing is playing right now.", ephemeral=True)
 
         title = player.current_track['title']
+        player.skip_requested = True
         player.voice_client.stop()
         await ctx.send(f"⏭️ Skipped **{title}**!")
 
