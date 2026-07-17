@@ -1,4 +1,4 @@
-discord.py[voice]
+discord.py[voice]>=2.7.1
 aiohttp
 flask
 python-dotenv
@@ -8,7 +8,7 @@ geopy
 timezonefinder
 pytz
 google-genai
-PyNaCl
-davey
+PyNaCl<1.6,>=1.5.0
+davey>=0.1.6
 yt-dlp
 imageio-ffmpeg
