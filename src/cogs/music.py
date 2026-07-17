@@ -759,9 +759,8 @@ class Music(commands.Cog):
         ydl_opts = get_ydl_opts(extract_flat='in_playlist')
         is_url = query.startswith("http://") or query.startswith("https://")
 
-        # Check for Spotify links and bridge via YouTube search
         if is_url and "spotify.com/" in query:
-            spotify_queries = await self.resolve_spotify_queries(query)
+            spotify_queries = await loop.run_in_executor(None, lambda: fetch_spotify_queries(query))
             if not spotify_queries:
                 raise RuntimeError(f"Could not extract track information from Spotify URL: {query}")
 
