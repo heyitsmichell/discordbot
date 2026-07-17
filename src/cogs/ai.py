@@ -53,22 +53,22 @@ For example:
 
 Only add reactions if you genuinely feel like reacting. Strongly prefer custom server emotes for reactions over plain Unicode emojis. Keep it chill, 1-3 max."""
 
-    async def generate_response(self, message: str, guild: discord.Guild, author_name: str = "User", channel_name: str = "chat") -> tuple[str, list[str]]:
+    async def generate_response(self, message: str, guild: discord.Guild, author_name: str = "User", channel_name: str = "chat", channel_id: int = 0) -> tuple[str, list[str]]:
         if not self.client:
             return "❌ Gemini API key not configured.", []
         
-        models = ['gemini-2.5-flash']
+        models = ['gemini-3.1-flash-lite']
         system_prompt = self.build_system_prompt(guild)
         
-        guild_key = guild.id if guild else 0
-        # Get or init server-wide history for this guild
-        if guild_key not in self.history:
-            self.history[guild_key] = deque(maxlen=20)
+        history_key = channel_id if channel_id != 0 else (guild.id if guild else 0)
+        # Get or init per-channel history
+        if history_key not in self.history:
+            self.history[history_key] = deque(maxlen=100)
         
         formatted_user_message = f"[#{channel_name}] {author_name}: {message}"
         
-        # Prepare content with server-wide history
-        contents = list(self.history[guild_key])
+        # Prepare content with per-channel history
+        contents = list(self.history[history_key])
         contents.append(types.Content(role='user', parts=[types.Part.from_text(text=formatted_user_message)]))
         
         for model_name in models:
@@ -99,9 +99,9 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                             reactions.append(cleaned)
                     response_text = re.sub(r'\[REACT:\s*.+?\]', '', response_text).strip()
                 
-                # Update server-wide history (append user msg and model response)
-                self.history[guild_key].append(types.Content(role='user', parts=[types.Part.from_text(text=formatted_user_message)]))
-                self.history[guild_key].append(types.Content(role='model', parts=[types.Part.from_text(text=response_text)]))
+                # Update per-channel history (append user msg and model response)
+                self.history[history_key].append(types.Content(role='user', parts=[types.Part.from_text(text=formatted_user_message)]))
+                self.history[history_key].append(types.Content(role='model', parts=[types.Part.from_text(text=response_text)]))
 
                 return response_text, reactions[:3]
                 
@@ -136,7 +136,7 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
         
         channel_name = getattr(interaction.channel, "name", "chat")
         author_name = interaction.user.display_name
-        response_text, reactions = await self.generate_response(question, interaction.guild, author_name, channel_name)
+        response_text, reactions = await self.generate_response(question, interaction.guild, author_name, channel_name, interaction.channel_id or 0)
         
         sent_message = await interaction.followup.send(response_text)
         
@@ -159,7 +159,7 @@ If you feel like reacting to this message with 1 or 2 of our server's custom emo
 If you don't feel like reacting or no emote fits well, respond ONLY with:
 NONE"""
             response = await self.client.aio.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.1-flash-lite',
                 contents=[types.Content(role='user', parts=[types.Part.from_text(text=prompt)])]
             )
             text = (response.text or "").strip()
@@ -177,19 +177,19 @@ NONE"""
         if message.author.bot:
             return
         
-        # Always passively record message into server-wide conversational memory
-        guild_key = message.guild.id if message.guild else 0
+        # Always passively record message into per-channel conversational memory
+        history_key = message.channel.id
         channel_name = getattr(message.channel, "name", "chat")
         author_name = message.author.display_name
         formatted_user_message = f"[#{channel_name}] {author_name}: {message.content}"
         
-        if guild_key not in self.history:
-            self.history[guild_key] = deque(maxlen=20)
-        self.history[guild_key].append(types.Content(role='user', parts=[types.Part.from_text(text=formatted_user_message)]))
+        if history_key not in self.history:
+            self.history[history_key] = deque(maxlen=100)
+        self.history[history_key].append(types.Content(role='user', parts=[types.Part.from_text(text=formatted_user_message)]))
         
-        # If bot is not mentioned, 15% chance to randomly react with custom server emotes!
+        # If bot is not mentioned, 25% chance to randomly react with custom server emotes!
         if not self.bot.user.mentioned_in(message):
-            if not message.content.startswith(('/', '!')) and random.random() < 0.15:
+            if not message.content.startswith(('/', '!')) and random.random() < 0.25:
                 await self.maybe_random_react(message)
             return
         
@@ -207,7 +207,7 @@ NONE"""
             clean_content = "Hello!"
         
         async with message.channel.typing():
-            response_text, reactions = await self.generate_response(clean_content, message.guild, author_name, channel_name)
+            response_text, reactions = await self.generate_response(clean_content, message.guild, author_name, channel_name, message.channel.id)
         
         sent_message = await message.reply(response_text, mention_author=False)
         
