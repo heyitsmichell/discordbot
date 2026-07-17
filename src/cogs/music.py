@@ -156,10 +156,9 @@ def get_ydl_opts(extract_flat: bool | str = False) -> dict:
         'remote_components': ['ejs:github'],
         'extractor_args': {
             'youtube': {
-                'player_client': ['web_embedded', 'default', 'tv', 'ios', '-android_sdkless']
+                'player_client': ['default', 'web_embedded', 'tv', 'ios', '-android_sdkless']
             }
-        },
-        'sleep_requests': 1
+        }
     }
     cookies_browser = os.getenv('YT_COOKIES_BROWSER')
     cookies_file = os.getenv('YT_COOKIES_FILE')
@@ -199,6 +198,17 @@ def format_duration(seconds: int | float) -> str:
         return f"{minutes:02}:{secs:02}"
 
 
+def format_track_title(track: dict) -> str:
+    title = track.get('title', 'Unknown Title')
+    if track.get('is_local'):
+        return f"**{title}** (Local Upload)"
+    url = track.get('webpage_url', '')
+    if url and (str(url).startswith('http://') or str(url).startswith('https://')):
+        return f"**[{title}]({url})**"
+    return f"**{title}**"
+
+
+
 class NowPlayingView(View):
     def __init__(self, player: 'GuildMusicPlayer'):
         super().__init__(timeout=None)
@@ -228,11 +238,6 @@ class NowPlayingView(View):
         btn_loop = Button(label=f"Loop: {self.player.loop_mode}", style=loop_style, emoji=loop_emoji, custom_id=f"np_loop_{self.player.guild_id}", row=0)
         btn_loop.callback = self.on_loop
         self.add_item(btn_loop)
-
-        # Stop Button
-        btn_stop = Button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️", custom_id=f"np_stop_{self.player.guild_id}", row=0)
-        btn_stop.callback = self.on_stop
-        self.add_item(btn_stop)
 
         # View Queue Button
         btn_queue = Button(label="Queue", style=discord.ButtonStyle.secondary, emoji="📜", custom_id=f"np_queue_{self.player.guild_id}", row=1)
@@ -507,8 +512,14 @@ class GuildMusicPlayer:
 
     async def create_audio_source(self, track: dict) -> discord.AudioSource:
         ffmpeg_executable = get_ffmpeg_path()
+        audio_filter_options = '-vn -sn -dn -af "loudnorm=I=-16:TP=-1.5:LRA=11"'
+        
         if track.get('is_local'):
-            source = await discord.FFmpegOpusAudio.from_probe(track['source'], executable=ffmpeg_executable, stderr=sys.stderr)
+            ffmpeg_options = {
+                'options': audio_filter_options,
+                'stderr': sys.stderr
+            }
+            source = await discord.FFmpegOpusAudio.from_probe(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
         else:
             before_opts = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
             http_headers = track.get('http_headers')
@@ -522,7 +533,7 @@ class GuildMusicPlayer:
 
             ffmpeg_options = {
                 'before_options': before_opts,
-                'options': '-vn -sn -dn',
+                'options': audio_filter_options,
                 'stderr': sys.stderr
             }
             source = await discord.FFmpegOpusAudio.from_probe(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
@@ -600,7 +611,7 @@ class GuildMusicPlayer:
             if self.channel_for_updates:
                 embed = discord.Embed(
                     title="🎶 Now Playing",
-                    description=f"**[{track_to_play['title']}]({track_to_play.get('webpage_url', '')})**" if not track_to_play.get('is_local') else f"**{track_to_play['title']}** (Local Upload)",
+                    description=format_track_title(track_to_play),
                     color=discord.Color.from_rgb(255, 105, 180)
                 )
                 embed.add_field(name="⏱️ Duration", value=format_duration(track_to_play.get('duration', 0)), inline=True)
@@ -746,21 +757,21 @@ class Music(commands.Cog):
 
         loop = asyncio.get_event_loop()
         ydl_opts = get_ydl_opts(extract_flat='in_playlist')
-
         is_url = query.startswith("http://") or query.startswith("https://")
 
         # Check for Spotify links and bridge via YouTube search
         if is_url and "spotify.com/" in query:
-            spotify_queries = await loop.run_in_executor(None, lambda: fetch_spotify_queries(query))
+            spotify_queries = await self.resolve_spotify_queries(query)
             if not spotify_queries:
-                raise RuntimeError("Could not extract track metadata from that Spotify link.")
+                raise RuntimeError(f"Could not extract track information from Spotify URL: {query}")
 
             all_tracks = []
+            ydl_opts_spotify = get_ydl_opts(extract_flat=True)
             for sq in spotify_queries:
                 try:
                     info = await loop.run_in_executor(
                         None,
-                        lambda sq=sq: yt_dlp.YoutubeDL(ydl_opts).extract_info(f"ytsearch1:{sq}", download=False)
+                        lambda sq=sq: yt_dlp.YoutubeDL(ydl_opts_spotify).extract_info(f"ytsearch1:{sq}", download=False)
                     )
                     if info:
                         entries = info.get('entries', [info]) if 'entries' in info else [info]
@@ -768,10 +779,15 @@ class Music(commands.Cog):
                             if not entry:
                                 continue
                             entry_url = entry.get('url')
-                            web_url = entry.get('webpage_url', f"https://www.youtube.com/results?search_query={urllib.parse.quote(sq)}")
-                            if entry_url and not str(entry_url).startswith('http://') and not str(entry_url).startswith('https://'):
+                            video_id = entry.get('id')
+                            web_url = entry.get('webpage_url')
+                            if video_id and not (web_url and (str(web_url).startswith('http://') or str(web_url).startswith('https://'))):
+                                web_url = f"https://www.youtube.com/watch?v={video_id}"
+                            elif entry_url and not (str(entry_url).startswith('http://') or str(entry_url).startswith('https://')):
                                 web_url = f"https://www.youtube.com/watch?v={entry_url}"
                                 entry_url = web_url
+                            elif not (web_url and (str(web_url).startswith('http://') or str(web_url).startswith('https://'))):
+                                web_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(sq)}"
                             all_tracks.append({
                                 'title': entry.get('title', sq),
                                 'source': entry_url,
@@ -791,11 +807,12 @@ class Music(commands.Cog):
             return all_tracks
 
         search_query = query if is_url else f"ytsearch1:{query}"
+        ydl_opts_to_use = ydl_opts if is_url else get_ydl_opts(extract_flat=True)
 
         try:
             info = await loop.run_in_executor(
                 None,
-                lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(search_query, download=False)
+                lambda: yt_dlp.YoutubeDL(ydl_opts_to_use).extract_info(search_query, download=False)
             )
         except Exception as e:
             logging.error(f"YouTube extraction failed for '{query}': {e}")
@@ -810,10 +827,15 @@ class Music(commands.Cog):
             if not entry:
                 continue
             entry_url = entry.get('url')
-            web_url = entry.get('webpage_url', query)
-            if entry_url and not str(entry_url).startswith('http://') and not str(entry_url).startswith('https://'):
+            video_id = entry.get('id')
+            web_url = entry.get('webpage_url')
+            if video_id and not (web_url and (str(web_url).startswith('http://') or str(web_url).startswith('https://'))):
+                web_url = f"https://www.youtube.com/watch?v={video_id}"
+            elif entry_url and not (str(entry_url).startswith('http://') or str(entry_url).startswith('https://')):
                 web_url = f"https://www.youtube.com/watch?v={entry_url}"
                 entry_url = web_url
+            elif not (web_url and (str(web_url).startswith('http://') or str(web_url).startswith('https://'))):
+                web_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
             tracks.append({
                 'title': entry.get('title', 'Unknown Title'),
                 'source': entry_url,
@@ -1243,7 +1265,7 @@ class Music(commands.Cog):
             else:
                 embed = discord.Embed(
                     title="➕ Added to Queue",
-                    description=f"**[{track['title']}]({track['webpage_url']})**" if not track.get('is_local') else f"**{track['title']}** (Local Upload)",
+                    description=format_track_title(track),
                     color=discord.Color.from_rgb(100, 149, 237)
                 )
                 embed.add_field(name="⏱️ Duration", value=format_duration(track.get('duration', 0)), inline=True)
@@ -1272,7 +1294,7 @@ class Music(commands.Cog):
         t = player.current_track
         embed = discord.Embed(
             title="🎶 Currently Playing",
-            description=f"**[{t['title']}]({t.get('webpage_url', '')})**" if not t.get('is_local') else f"**{t['title']}** (Local Upload)",
+            description=format_track_title(t),
             color=discord.Color.from_rgb(255, 105, 180)
         )
         embed.add_field(name="⏱️ Duration", value=format_duration(t.get('duration', 0)), inline=True)
