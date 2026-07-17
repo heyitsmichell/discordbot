@@ -189,8 +189,9 @@ NONE"""
         
         # If bot is not mentioned, 25% chance to randomly react with custom server emotes!
         if not self.bot.user.mentioned_in(message):
-            if not message.content.startswith(('/', '!')) and random.random() < 0.25:
-                await self.maybe_random_react(message)
+            # DISABLED to conserve Free Tier API quota and prevent 429 rate limits:
+            # if not message.content.startswith(('/', '!')) and random.random() < 0.25:
+            #     await self.maybe_random_react(message)
             return
         
         if message.mention_everyone:

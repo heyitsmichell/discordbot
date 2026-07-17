@@ -165,7 +165,7 @@ except Exception as e:
 
 def get_ydl_opts(extract_flat: bool | str = False) -> dict:
     opts = {
-        'format': 'bestaudio/best',
+        'format': 'bestaudio[ext=webm]+bestaudio/bestaudio/best',
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
@@ -532,7 +532,9 @@ class GuildMusicPlayer:
             asyncio.create_task(self.preload_next_track())
 
     async def preload_next_track(self):
-        """Asynchronously preload the audio stream URL for the next track (`self.queue[0]`) using a separate OS process (`ProcessPoolExecutor`) and smart near-end timing (`20s before song ends`) to eliminate gap without touching Python's GIL."""
+        """Asynchronously preload the audio stream URL for the next track (`self.queue[0]`).
+        Temporarily disabled to conserve RAM on 512MB hosting environments."""
+        return
         if not self.queue or not yt_dlp:
             return
         
@@ -578,7 +580,7 @@ class GuildMusicPlayer:
 
     async def create_audio_source(self, track: dict) -> discord.AudioSource:
         ffmpeg_executable = get_ffmpeg_path()
-        audio_filter_options = '-vn -sn -dn -af "dynaudnorm=f=500:g=31:p=0.5:m=5.0:r=0.9:s=12"'
+        audio_filter_options = '-vn -sn -dn -af "dynaudnorm=f=500:g=31:p=0.5:m=5.0:r=0.9:s=12,aresample=48000:async=1"'
         
         if track.get('is_local'):
             ffmpeg_options = {
@@ -662,10 +664,8 @@ class GuildMusicPlayer:
                 loop = asyncio.get_event_loop()
                 ydl_opts = get_ydl_opts()
                 info = await loop.run_in_executor(
-                    get_yt_dlp_process_executor(),
-                    _extract_info_subprocess,
-                    track_to_play['webpage_url'],
-                    ydl_opts
+                    YT_DLP_EXECUTOR,
+                    lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(track_to_play['webpage_url'], download=False)
                 )
                 if not info:
                     raise ValueError("Empty info returned")
