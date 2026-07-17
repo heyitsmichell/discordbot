@@ -33,6 +33,7 @@ MUSIC_INDEX_FILE = os.path.join(MUSIC_DATA_DIR, 'library.json')
 
 os.makedirs(MUSIC_FILES_DIR, exist_ok=True)
 YT_SEARCH_CACHE: dict[str, tuple[float, list]] = {}
+YT_DLP_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="ytdlp_worker")
 
 
 def load_music_index() -> dict:
@@ -516,6 +517,14 @@ class GuildMusicPlayer:
         """Asynchronously preload the audio stream URL for the next track in queue (`self.queue[0]`) to eliminate gap between songs."""
         if not self.queue or not yt_dlp:
             return
+        
+        # Yield and wait 10 seconds if music is currently playing to prioritize the active song 100% and avoid audio stutter
+        if self.is_playing:
+            await asyncio.sleep(10.0)
+            
+        if not self.queue:
+            return
+            
         next_track = self.queue[0]
         if next_track.get('is_local') or not next_track.get('webpage_url'):
             return
@@ -528,7 +537,7 @@ class GuildMusicPlayer:
             loop = asyncio.get_event_loop()
             ydl_opts = get_ydl_opts()
             info = await loop.run_in_executor(
-                None,
+                YT_DLP_EXECUTOR,
                 lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(next_track['webpage_url'], download=False)
             )
             if info:
@@ -628,7 +637,7 @@ class GuildMusicPlayer:
                 loop = asyncio.get_event_loop()
                 ydl_opts = get_ydl_opts()
                 info = await loop.run_in_executor(
-                    None,
+                    YT_DLP_EXECUTOR,
                     lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(track_to_play['webpage_url'], download=False)
                 )
                 if not info:
