@@ -509,6 +509,38 @@ class GuildMusicPlayer:
 
     def add_to_queue(self, track: dict):
         self.queue.append(track)
+        if self.is_playing and len(self.queue) == 1:
+            asyncio.create_task(self.preload_next_track())
+
+    async def preload_next_track(self):
+        """Asynchronously preload the audio stream URL for the next track in queue (`self.queue[0]`) to eliminate gap between songs."""
+        if not self.queue or not yt_dlp:
+            return
+        next_track = self.queue[0]
+        if next_track.get('is_local') or not next_track.get('webpage_url'):
+            return
+        
+        now = time.time()
+        if next_track.get('source') and next_track.get('extracted_at') and (now - next_track['extracted_at'] < 18000):
+            return
+            
+        try:
+            loop = asyncio.get_event_loop()
+            ydl_opts = get_ydl_opts()
+            info = await loop.run_in_executor(
+                None,
+                lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(next_track['webpage_url'], download=False)
+            )
+            if info:
+                entry = info['entries'][0] if 'entries' in info and info['entries'] else info
+                if entry and entry.get('url'):
+                    next_track['source'] = entry['url']
+                    next_track['extracted_at'] = time.time()
+                    if entry.get('http_headers'):
+                        next_track['http_headers'] = entry.get('http_headers')
+                    logging.info(f"Preloaded stream URL for upcoming track: {next_track.get('title')}")
+        except Exception as e:
+            logging.debug(f"Could not preload upcoming track {next_track.get('title')}: {e}")
 
     async def create_audio_source(self, track: dict) -> discord.AudioSource:
         ffmpeg_executable = get_ffmpeg_path()
@@ -584,8 +616,14 @@ class GuildMusicPlayer:
         self.is_playing = True
         self.is_paused = False
 
-        # Check if we need to refresh stream URL (for non-local tracks older than 1 hour or expired URLs)
-        if not track_to_play.get('is_local') and yt_dlp:
+        # Check if we need to refresh stream URL (if not preloaded or if older than 5 hours)
+        now = time.time()
+        needs_refresh = not track_to_play.get('is_local') and yt_dlp and (
+            not track_to_play.get('source') or
+            not track_to_play.get('extracted_at') or
+            (now - track_to_play.get('extracted_at', 0) > 18000)
+        )
+        if needs_refresh and track_to_play.get('webpage_url'):
             try:
                 loop = asyncio.get_event_loop()
                 ydl_opts = get_ydl_opts()
@@ -598,6 +636,7 @@ class GuildMusicPlayer:
                 entry = info['entries'][0] if 'entries' in info and info['entries'] else info
                 if entry and entry.get('url'):
                     track_to_play['source'] = entry['url']
+                    track_to_play['extracted_at'] = time.time()
                     if entry.get('http_headers'):
                         track_to_play['http_headers'] = entry.get('http_headers')
             except Exception as e:
@@ -606,6 +645,9 @@ class GuildMusicPlayer:
         try:
             source = await self.create_audio_source(track_to_play)
             self.voice_client.play(source, after=self.after_play_callback)
+            
+            # Asynchronously preload the stream URL for the NEXT song in line so it plays without delay!
+            asyncio.create_task(self.preload_next_track())
             
             # Send Now Playing announcement
             if self.channel_for_updates:
