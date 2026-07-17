@@ -213,26 +213,41 @@ class NowPlayingView(View):
         pause_style = discord.ButtonStyle.green if self.player.is_paused else discord.ButtonStyle.secondary
         pause_emoji = "▶️" if self.player.is_paused else "⏸️"
         
-        btn_pause = Button(label=pause_label, style=pause_style, emoji=pause_emoji, custom_id=f"np_pause_{self.player.guild_id}")
+        btn_pause = Button(label=pause_label, style=pause_style, emoji=pause_emoji, custom_id=f"np_pause_{self.player.guild_id}", row=0)
         btn_pause.callback = self.on_pause_resume
         self.add_item(btn_pause)
 
         # Skip Button
-        btn_skip = Button(label="Skip", style=discord.ButtonStyle.primary, emoji="⏭️", custom_id=f"np_skip_{self.player.guild_id}")
+        btn_skip = Button(label="Skip", style=discord.ButtonStyle.primary, emoji="⏭️", custom_id=f"np_skip_{self.player.guild_id}", row=0)
         btn_skip.callback = self.on_skip
         self.add_item(btn_skip)
 
         # Loop Button
         loop_emoji = "🔁" if self.player.loop_mode == "QUEUE" else ("🔂" if self.player.loop_mode == "TRACK" else "➡️")
         loop_style = discord.ButtonStyle.success if self.player.loop_mode != "OFF" else discord.ButtonStyle.secondary
-        btn_loop = Button(label=f"Loop: {self.player.loop_mode}", style=loop_style, emoji=loop_emoji, custom_id=f"np_loop_{self.player.guild_id}")
+        btn_loop = Button(label=f"Loop: {self.player.loop_mode}", style=loop_style, emoji=loop_emoji, custom_id=f"np_loop_{self.player.guild_id}", row=0)
         btn_loop.callback = self.on_loop
         self.add_item(btn_loop)
 
         # Stop Button
-        btn_stop = Button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️", custom_id=f"np_stop_{self.player.guild_id}")
+        btn_stop = Button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️", custom_id=f"np_stop_{self.player.guild_id}", row=0)
         btn_stop.callback = self.on_stop
         self.add_item(btn_stop)
+
+        # View Queue Button
+        btn_queue = Button(label="Queue", style=discord.ButtonStyle.secondary, emoji="📜", custom_id=f"np_queue_{self.player.guild_id}", row=1)
+        btn_queue.callback = self.on_queue
+        self.add_item(btn_queue)
+
+        # Shuffle Button
+        btn_shuffle = Button(label="Shuffle", style=discord.ButtonStyle.secondary, emoji="🔀", disabled=(len(self.player.queue) < 2), custom_id=f"np_shuffle_{self.player.guild_id}", row=1)
+        btn_shuffle.callback = self.on_shuffle
+        self.add_item(btn_shuffle)
+
+        # Disconnect Button
+        btn_disconnect = Button(label="Disconnect", style=discord.ButtonStyle.danger, emoji="🔌", custom_id=f"np_disc_{self.player.guild_id}", row=1)
+        btn_disconnect.callback = self.on_disconnect
+        self.add_item(btn_disconnect)
 
     async def on_pause_resume(self, interaction: discord.Interaction):
         if not self.player.voice_client or not self.player.current_track:
@@ -291,6 +306,28 @@ class NowPlayingView(View):
             self.player.voice_client.stop()
             
         await interaction.response.send_message("⏹️ Stopped playback and cleared the queue.", ephemeral=True)
+
+    async def on_queue(self, interaction: discord.Interaction):
+        view = QueueView(self.player, page=1)
+        embed = view.build_embed()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    async def on_shuffle(self, interaction: discord.Interaction):
+        if len(self.player.queue) < 2:
+            return await interaction.response.send_message("❌ Not enough tracks in the queue to shuffle.", ephemeral=True)
+        random.shuffle(self.player.queue)
+        self.update_buttons()
+        await interaction.response.send_message("🔀 Shuffled the upcoming music queue!", ephemeral=True)
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+    async def on_disconnect(self, interaction: discord.Interaction):
+        if not self.player.voice_client:
+            return await interaction.response.send_message("❌ Bot is not in a voice channel.", ephemeral=True)
+        await interaction.response.send_message("🔌 Disconnected from voice and cleared the queue.", ephemeral=True)
+        await self.player.disconnect()
 
 
 class QueueView(View):
