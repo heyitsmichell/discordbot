@@ -553,7 +553,7 @@ class GuildMusicPlayer:
 
     async def create_audio_source(self, track: dict) -> discord.AudioSource:
         ffmpeg_executable = get_ffmpeg_path()
-        audio_filter_options = '-vn -sn -dn -af "loudnorm=I=-16:TP=-1.5:LRA=11"'
+        audio_filter_options = '-vn -sn -dn -af "dynaudnorm=f=500:g=31:p=0.5:m=5.0:r=0.9:s=12"'
         
         if track.get('is_local'):
             ffmpeg_options = {
