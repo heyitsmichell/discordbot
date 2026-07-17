@@ -519,7 +519,7 @@ class GuildMusicPlayer:
                 'options': audio_filter_options,
                 'stderr': sys.stderr
             }
-            source = await discord.FFmpegOpusAudio.from_probe(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
+            source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
         else:
             before_opts = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
             http_headers = track.get('http_headers')
@@ -536,9 +536,9 @@ class GuildMusicPlayer:
                 'options': audio_filter_options,
                 'stderr': sys.stderr
             }
-            source = await discord.FFmpegOpusAudio.from_probe(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
+            source = discord.FFmpegPCMAudio(track['source'], executable=ffmpeg_executable, **ffmpeg_options)
         
-        return source
+        return discord.PCMVolumeTransformer(source, volume=self.volume)
 
     def after_play_callback(self, error):
         if error:
@@ -1455,7 +1455,12 @@ class Music(commands.Cog):
         if level < 1 or level > 100:
             return await ctx.send("❌ Volume must be between 1 and 100!", ephemeral=True)
 
-        await ctx.send(f"🔊 Note: The bot is running in **High-Fidelity Pure Opus Passthrough mode** (`384 kbps`). For dynamic volume changes without audio quality loss, please right-click the bot user (**{ctx.guild.me.display_name}**) and adjust User Volume directly!")
+        player = self.get_player(ctx.guild)
+        player.volume = level / 100.0
+        if player.voice_client and player.voice_client.source:
+            if isinstance(player.voice_client.source, discord.PCMVolumeTransformer):
+                player.voice_client.source.volume = player.volume
+        await ctx.send(f"🔊 Playback volume set to **{level}%**!")
 
 
 async def setup(bot: commands.Bot):
