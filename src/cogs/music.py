@@ -34,6 +34,24 @@ MUSIC_INDEX_FILE = os.path.join(MUSIC_DATA_DIR, 'library.json')
 os.makedirs(MUSIC_FILES_DIR, exist_ok=True)
 YT_SEARCH_CACHE: dict[str, tuple[float, list]] = {}
 YT_DLP_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="ytdlp_worker")
+YT_DLP_PROCESS_EXECUTOR: concurrent.futures.ProcessPoolExecutor | None = None
+
+
+def get_yt_dlp_process_executor() -> concurrent.futures.ProcessPoolExecutor:
+    global YT_DLP_PROCESS_EXECUTOR
+    if YT_DLP_PROCESS_EXECUTOR is None:
+        YT_DLP_PROCESS_EXECUTOR = concurrent.futures.ProcessPoolExecutor(max_workers=1)
+    return YT_DLP_PROCESS_EXECUTOR
+
+
+def _extract_info_subprocess(url: str, ydl_opts: dict) -> dict | None:
+    """Top-level function run inside a separate OS process (`ProcessPoolExecutor`) to isolate yt-dlp from Python's GIL."""
+    try:
+        import yt_dlp
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(url, download=False)
+    except Exception:
+        return None
 
 
 def load_music_index() -> dict:
@@ -514,15 +532,20 @@ class GuildMusicPlayer:
             asyncio.create_task(self.preload_next_track())
 
     async def preload_next_track(self):
-        """Asynchronously preload the audio stream URL for the next track in queue (`self.queue[0]`) to eliminate gap between songs."""
+        """Asynchronously preload the audio stream URL for the next track (`self.queue[0]`) using a separate OS process (`ProcessPoolExecutor`) and smart near-end timing (`20s before song ends`) to eliminate gap without touching Python's GIL."""
         if not self.queue or not yt_dlp:
             return
         
-        # Yield and wait 10 seconds if music is currently playing to prioritize the active song 100% and avoid audio stutter
-        if self.is_playing:
-            await asyncio.sleep(10.0)
+        # Smart Near-End Timer: wait until ~20 seconds before the currently playing song ends
+        if self.is_playing and self.current_track:
+            duration = self.current_track.get('duration', 0)
+            if duration > 30:
+                wait_time = max(5.0, duration - 20.0)
+            else:
+                wait_time = 10.0
+            await asyncio.sleep(wait_time)
             
-        if not self.queue:
+        if not self.queue or not self.is_playing:
             return
             
         next_track = self.queue[0]
@@ -537,8 +560,10 @@ class GuildMusicPlayer:
             loop = asyncio.get_event_loop()
             ydl_opts = get_ydl_opts()
             info = await loop.run_in_executor(
-                YT_DLP_EXECUTOR,
-                lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(next_track['webpage_url'], download=False)
+                get_yt_dlp_process_executor(),
+                _extract_info_subprocess,
+                next_track['webpage_url'],
+                ydl_opts
             )
             if info:
                 entry = info['entries'][0] if 'entries' in info and info['entries'] else info
@@ -547,7 +572,7 @@ class GuildMusicPlayer:
                     next_track['extracted_at'] = time.time()
                     if entry.get('http_headers'):
                         next_track['http_headers'] = entry.get('http_headers')
-                    logging.info(f"Preloaded stream URL for upcoming track: {next_track.get('title')}")
+                    logging.info(f"Preloaded stream URL for upcoming track in separate OS process: {next_track.get('title')}")
         except Exception as e:
             logging.debug(f"Could not preload upcoming track {next_track.get('title')}: {e}")
 
@@ -637,8 +662,10 @@ class GuildMusicPlayer:
                 loop = asyncio.get_event_loop()
                 ydl_opts = get_ydl_opts()
                 info = await loop.run_in_executor(
-                    YT_DLP_EXECUTOR,
-                    lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(track_to_play['webpage_url'], download=False)
+                    get_yt_dlp_process_executor(),
+                    _extract_info_subprocess,
+                    track_to_play['webpage_url'],
+                    ydl_opts
                 )
                 if not info:
                     raise ValueError("Empty info returned")
