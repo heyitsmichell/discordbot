@@ -7,6 +7,7 @@ import os
 import re
 import random
 import json
+import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 from ddgs import DDGS
@@ -77,7 +78,7 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
         history_key = channel_id if channel_id != 0 else (guild.id if guild else 0)
         # Get or init per-channel history
         if history_key not in self.history:
-            saved_history = get_ai_history(history_key)
+            saved_history = await asyncio.to_thread(get_ai_history, history_key)
             self.history[history_key] = deque(saved_history, maxlen=100)
         
         formatted_user_message = f"[#{channel_name}] {author_name}: {message}"
@@ -125,7 +126,12 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                                 args = json.loads(tool_call.function.arguments)
                                 query = args.get("query", "")
                                 print(f"[AI] Searching web for: {query}")
-                                results = DDGS().text(query, max_results=3)
+                                
+                                # Run search in a thread to not block the Discord event loop!
+                                def do_search(q):
+                                    return DDGS().text(q, max_results=3)
+                                
+                                results = await asyncio.to_thread(do_search, query)
                                 search_text = "\n".join([f"Title: {r['title']}\nContent: {r['body']}" for r in results])
                             except Exception as e:
                                 search_text = f"Search failed: {e}"
@@ -165,7 +171,10 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                 # Update per-channel history (append user msg and model response)
                 self.history[history_key].append({"role": "user", "content": formatted_user_message})
                 self.history[history_key].append({"role": "assistant", "content": response_text})
-                save_ai_history(history_key, list(self.history[history_key]))
+                
+                # Fire and forget saving to db so it doesn't block
+                history_copy = list(self.history[history_key])
+                asyncio.create_task(asyncio.to_thread(save_ai_history, history_key, history_copy))
 
                 return response_text, reactions[:3]
                 
@@ -250,10 +259,13 @@ NONE"""
         formatted_user_message = f"[#{channel_name}] {author_name}: {message.content}"
         
         if history_key not in self.history:
-            saved_history = get_ai_history(history_key)
+            saved_history = await asyncio.to_thread(get_ai_history, history_key)
             self.history[history_key] = deque(saved_history, maxlen=100)
         self.history[history_key].append({"role": "user", "content": formatted_user_message})
-        save_ai_history(history_key, list(self.history[history_key]))
+        
+        # Save to DB in the background
+        history_copy = list(self.history[history_key])
+        asyncio.create_task(asyncio.to_thread(save_ai_history, history_key, history_copy))
         
         # If bot is not mentioned, 25% chance to randomly react with custom server emotes!
         if not self.bot.user.mentioned_in(message):
