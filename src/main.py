@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import View, Select
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import asyncio
 import threading
@@ -16,7 +17,13 @@ import config
 load_dotenv()
 
 # Setup logging - output to both file and console (for Render visibility)
-file_handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='a')
+file_handler = RotatingFileHandler(
+    filename='discord.log', 
+    encoding='utf-8', 
+    mode='a', 
+    maxBytes=5*1024*1024, # 5 MB
+    backupCount=2
+)
 stream_handler = logging.StreamHandler()
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
 
@@ -26,7 +33,7 @@ intents.members = True
 intents.message_content = True
 intents.guilds = True
 
-bot = commands.Bot(command_prefix='/', intents=intents, help_command=None)
+bot = commands.Bot(command_prefix='/', intents=intents, help_command=None, max_messages=100)
 
 # Load cogs
 async def load_extensions():

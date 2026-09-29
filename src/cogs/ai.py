@@ -82,7 +82,7 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
         # Get or init per-channel history
         if history_key not in self.history:
             saved_history = await asyncio.to_thread(get_ai_history, history_key)
-            self.history[history_key] = deque(saved_history, maxlen=100)
+            self.history[history_key] = deque(saved_history, maxlen=30)
         
         formatted_user_message = f"[#{channel_name}] {author_name}: {message}"
         
@@ -314,12 +314,8 @@ NONE"""
         
         if history_key not in self.history:
             saved_history = await asyncio.to_thread(get_ai_history, history_key)
-            self.history[history_key] = deque(saved_history, maxlen=100)
+            self.history[history_key] = deque(saved_history, maxlen=30)
         self.history[history_key].append({"role": "user", "content": formatted_user_message})
-        
-        # Save to DB in the background
-        history_copy = list(self.history[history_key])
-        asyncio.create_task(asyncio.to_thread(save_ai_history, history_key, history_copy))
         
         # If bot is not mentioned, 25% chance to randomly react with custom server emotes!
         if not self.bot.user.mentioned_in(message):
