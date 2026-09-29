@@ -1,8 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from google import genai
-from google.genai import types
+from openai import AsyncOpenAI
 from collections import deque
 import os
 import re
@@ -11,12 +10,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
+NVIDIA_MODEL = os.getenv('NVIDIA_MODEL', 'meta/llama-3.1-70b-instruct')
 
 class AI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+        self.client = AsyncOpenAI(
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=NVIDIA_API_KEY
+        ) if NVIDIA_API_KEY else None
         self.history = {} # Key: channel_id, Value: deque of messages
     
     def get_server_emotes(self, guild: discord.Guild) -> str:
@@ -55,9 +58,9 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
 
     async def generate_response(self, message: str, guild: discord.Guild, author_name: str = "User", channel_name: str = "chat", channel_id: int = 0) -> tuple[str, list[str]]:
         if not self.client:
-            return "❌ Gemini API key not configured.", []
+            return "❌ NVIDIA API key not configured.", []
         
-        models = ['gemini-3.1-flash-lite']
+        models = [NVIDIA_MODEL]
         system_prompt = self.build_system_prompt(guild)
         
         history_key = channel_id if channel_id != 0 else (guild.id if guild else 0)
@@ -68,21 +71,19 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
         formatted_user_message = f"[#{channel_name}] {author_name}: {message}"
         
         # Prepare content with per-channel history
-        contents = list(self.history[history_key])
-        contents.append(types.Content(role='user', parts=[types.Part.from_text(text=formatted_user_message)]))
+        messages = [{"role": "system", "content": system_prompt}] + list(self.history[history_key])
+        messages.append({"role": "user", "content": formatted_user_message})
         
         for model_name in models:
             try:
-                response = await self.client.aio.models.generate_content(
+                response = await self.client.chat.completions.create(
                     model=model_name,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_prompt,
-                        tools=[types.Tool(google_search=types.GoogleSearch())]
-                    )
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=1024,
                 )
                 
-                response_text = response.text
+                response_text = response.choices[0].message.content
                 
                 # Replace :emote: with full emote code
                 if guild and guild.emojis:
@@ -100,8 +101,8 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                     response_text = re.sub(r'\[REACT:\s*.+?\]', '', response_text).strip()
                 
                 # Update per-channel history (append user msg and model response)
-                self.history[history_key].append(types.Content(role='user', parts=[types.Part.from_text(text=formatted_user_message)]))
-                self.history[history_key].append(types.Content(role='model', parts=[types.Part.from_text(text=response_text)]))
+                self.history[history_key].append({"role": "user", "content": formatted_user_message})
+                self.history[history_key].append({"role": "assistant", "content": response_text})
 
                 return response_text, reactions[:3]
                 
@@ -158,11 +159,13 @@ If you feel like reacting to this message with 1 or 2 of our server's custom emo
 
 If you don't feel like reacting or no emote fits well, respond ONLY with:
 NONE"""
-            response = await self.client.aio.models.generate_content(
-                model='gemini-3.1-flash-lite',
-                contents=[types.Content(role='user', parts=[types.Part.from_text(text=prompt)])]
+            response = await self.client.chat.completions.create(
+                model='meta/llama-3.1-8b-instruct',
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=64,
             )
-            text = (response.text or "").strip()
+            text = (response.choices[0].message.content or "").strip()
             react_match = re.search(r'\[REACT:\s*(.+?)\]', text, re.IGNORECASE)
             if react_match:
                 reaction_str = react_match.group(1)
@@ -185,7 +188,7 @@ NONE"""
         
         if history_key not in self.history:
             self.history[history_key] = deque(maxlen=100)
-        self.history[history_key].append(types.Content(role='user', parts=[types.Part.from_text(text=formatted_user_message)]))
+        self.history[history_key].append({"role": "user", "content": formatted_user_message})
         
         # If bot is not mentioned, 25% chance to randomly react with custom server emotes!
         if not self.bot.user.mentioned_in(message):
