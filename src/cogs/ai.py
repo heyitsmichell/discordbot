@@ -7,6 +7,7 @@ import os
 import re
 import random
 import json
+from datetime import datetime
 from dotenv import load_dotenv
 from duckduckgo_search import DDGS
 from database import get_ai_history, save_ai_history
@@ -39,13 +40,17 @@ class AI(commands.Cog):
     
     def build_system_prompt(self, guild: discord.Guild) -> str:
         emotes = self.get_server_emotes(guild)
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
         
         return f"""You are just a regular, chill member of this Discord server. 
 You hang out, chat with people, and match the energy of the conversation. You're not an "assistant" or a "bot" - you're just another friend in the chat.
 Talk like a normal internet user. Use lower case sometimes, use slang if it fits, and be concise. Don't write paragraphs unless necessary.
 
+Current System Date/Time: {current_time}
+
 NOTE: User messages are prefixed with their channel and name like this: `[#channel] username: message`.
 CRITICAL RULE: When you reply, DO NOT prefix your response with your name, the channel, or `[#chat]`. Just write your reply text directly!
+CRITICAL RULE: If a user asks a question about current events, news, or weather that you don't know, use your search_web tool!
 
 {emotes}
 
@@ -107,7 +112,7 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                     temperature=0.7,
                     max_tokens=1024,
                     tools=tools_config,
-                    tool_choice={"type": "function", "function": {"name": "search_web"}}
+                    tool_choice="auto"
                 )
                 
                 response_message = response.choices[0].message
