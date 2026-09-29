@@ -9,7 +9,7 @@ import random
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from database import get_ai_history, save_ai_history
 
 load_dotenv()
