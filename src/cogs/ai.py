@@ -141,6 +141,9 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                 response_message = response.choices[0].message
                 
                 if response_message.tool_calls:
+                    # CRITICAL FIX: Erase any "thinking" text the AI generated before calling the tool.
+                    # This forces the AI's final answer to be clean without "let me check" prefixes.
+                    response_message.content = None
                     messages.append(response_message)
                     for tool_call in response_message.tool_calls:
                         if tool_call.function.name == "search_web":
