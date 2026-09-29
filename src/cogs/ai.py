@@ -51,7 +51,7 @@ Current System Date/Time: {current_time}
 
 NOTE: User messages are prefixed with their channel and name like this: `[#channel] username: message`.
 CRITICAL RULE: When you reply, DO NOT prefix your response with your name, the channel, or `[#chat]`. Just write your reply text directly!
-CRITICAL RULE: If a user asks a question about current events, news, or weather that you don't know, use your search_web tool!
+CRITICAL RULE: If a user asks about current events/news, use search_web. If they ask for the exact time or weather in a specific city, use the get_weather_and_time tool!
 
 {emotes}
 
@@ -89,23 +89,42 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
         
         for model_name in models:
             try:
-                tools_config = [{
-                    "type": "function",
-                    "function": {
-                        "name": "search_web",
-                        "description": "Search the internet for current events, facts, or information you don't know.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "query": {
-                                    "type": "string",
-                                    "description": "The search query to look up on DuckDuckGo."
-                                }
-                            },
-                            "required": ["query"]
+                tools_config = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_web",
+                            "description": "Search the internet for current events, facts, or information you don't know.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "query": {
+                                        "type": "string",
+                                        "description": "The search query to look up on DuckDuckGo."
+                                    }
+                                },
+                                "required": ["query"]
+                            }
+                        }
+                    },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather_and_time",
+                            "description": "Get the exact current local time and weather for a specific city or location.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "location": {
+                                        "type": "string",
+                                        "description": "The city or location (e.g. 'Sydney', 'New York')"
+                                    }
+                                },
+                                "required": ["location"]
+                            }
                         }
                     }
-                }]
+                ]
                 
                 response = await self.client.chat.completions.create(
                     model=model_name,
@@ -135,6 +154,30 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                                 search_text = "\n".join([f"Title: {r['title']}\nContent: {r['body']}" for r in results])
                             except Exception as e:
                                 search_text = f"Search failed: {e}"
+                            
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": search_text
+                            })
+                        elif tool_call.function.name == "get_weather_and_time":
+                            try:
+                                args = json.loads(tool_call.function.arguments)
+                                location = args.get("location", "")
+                                print(f"[AI] Getting weather/time for: {location}")
+                                
+                                def do_wttr(loc):
+                                    import urllib.request
+                                    import urllib.parse
+                                    url = f"https://wttr.in/{urllib.parse.quote(loc)}?format=Time:+%T%0AWeather:+%C,+%t"
+                                    req = urllib.request.Request(url, headers={"User-Agent": "curl"})
+                                    with urllib.request.urlopen(req) as response:
+                                        return response.read().decode("utf-8")
+                                        
+                                wttr_result = await asyncio.to_thread(do_wttr, location)
+                                search_text = f"Location: {location}\n{wttr_result}"
+                            except Exception as e:
+                                search_text = f"Failed to get time/weather: {e}"
                             
                             messages.append({
                                 "role": "tool",
