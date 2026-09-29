@@ -10,13 +10,14 @@ import json
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-from ddgs import DDGS
+from tavily import TavilyClient
 from database import get_ai_history, save_ai_history
 
 load_dotenv()
 
 NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
 NVIDIA_MODEL = os.getenv('NVIDIA_MODEL', 'meta/llama-3.1-70b-instruct')
+TAVILY_API_KEY = os.getenv('TAVILY_API_KEY')
 
 class AI(commands.Cog):
     def __init__(self, bot):
@@ -25,6 +26,7 @@ class AI(commands.Cog):
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=NVIDIA_API_KEY
         ) if NVIDIA_API_KEY else None
+        self.tavily_client = TavilyClient(api_key=TAVILY_API_KEY) if TAVILY_API_KEY else None
         self.history = {} # Key: channel_id, Value: deque of messages
     
     def get_server_emotes(self, guild: discord.Guild) -> str:
@@ -149,10 +151,15 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                                 
                                 # Run search in a thread to not block the Discord event loop!
                                 def do_search(q):
-                                    return DDGS().text(q, max_results=3)
+                                    if not self.tavily_client:
+                                        return "Tavily API key not configured."
+                                    return self.tavily_client.search(q, search_depth="basic", max_results=3)
                                 
                                 results = await asyncio.to_thread(do_search, query)
-                                search_text = "\n".join([f"Title: {r['title']}\nContent: {r['body']}" for r in results])
+                                if isinstance(results, str):
+                                    search_text = results
+                                else:
+                                    search_text = "\n\n".join([f"Title: {r['title']}\nContent: {r['content']}\nURL: {r['url']}" for r in results.get("results", [])])
                             except Exception as e:
                                 search_text = f"Search failed: {e}"
                             
