@@ -6,7 +6,10 @@ from collections import deque
 import os
 import re
 import random
+import json
 from dotenv import load_dotenv
+from duckduckgo_search import DDGS
+from database import get_ai_history, save_ai_history
 
 load_dotenv()
 
@@ -69,7 +72,8 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
         history_key = channel_id if channel_id != 0 else (guild.id if guild else 0)
         # Get or init per-channel history
         if history_key not in self.history:
-            self.history[history_key] = deque(maxlen=100)
+            saved_history = get_ai_history(history_key)
+            self.history[history_key] = deque(saved_history, maxlen=100)
         
         formatted_user_message = f"[#{channel_name}] {author_name}: {message}"
         
@@ -79,14 +83,63 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
         
         for model_name in models:
             try:
+                tools_config = [{
+                    "type": "function",
+                    "function": {
+                        "name": "search_web",
+                        "description": "Search the internet for current events, facts, or information you don't know.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "The search query to look up on DuckDuckGo."
+                                }
+                            },
+                            "required": ["query"]
+                        }
+                    }
+                }]
+                
                 response = await self.client.chat.completions.create(
                     model=model_name,
                     messages=messages,
                     temperature=0.7,
                     max_tokens=1024,
+                    tools=tools_config
                 )
                 
-                response_text = response.choices[0].message.content
+                response_message = response.choices[0].message
+                
+                if response_message.tool_calls:
+                    messages.append(response_message)
+                    for tool_call in response_message.tool_calls:
+                        if tool_call.function.name == "search_web":
+                            try:
+                                args = json.loads(tool_call.function.arguments)
+                                query = args.get("query", "")
+                                print(f"[AI] Searching web for: {query}")
+                                results = DDGS().text(query, max_results=3)
+                                search_text = "\n".join([f"Title: {r['title']}\nContent: {r['body']}" for r in results])
+                            except Exception as e:
+                                search_text = f"Search failed: {e}"
+                            
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": search_text
+                            })
+                    
+                    # Second call with tool results
+                    response = await self.client.chat.completions.create(
+                        model=model_name,
+                        messages=messages,
+                        temperature=0.7,
+                        max_tokens=1024
+                    )
+                    response_message = response.choices[0].message
+                
+                response_text = response_message.content or ""
                 
                 # Replace :emote: with full emote code
                 if guild and guild.emojis:
@@ -106,6 +159,7 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                 # Update per-channel history (append user msg and model response)
                 self.history[history_key].append({"role": "user", "content": formatted_user_message})
                 self.history[history_key].append({"role": "assistant", "content": response_text})
+                save_ai_history(history_key, list(self.history[history_key]))
 
                 return response_text, reactions[:3]
                 
@@ -190,8 +244,10 @@ NONE"""
         formatted_user_message = f"[#{channel_name}] {author_name}: {message.content}"
         
         if history_key not in self.history:
-            self.history[history_key] = deque(maxlen=100)
+            saved_history = get_ai_history(history_key)
+            self.history[history_key] = deque(saved_history, maxlen=100)
         self.history[history_key].append({"role": "user", "content": formatted_user_message})
+        save_ai_history(history_key, list(self.history[history_key]))
         
         # If bot is not mentioned, 25% chance to randomly react with custom server emotes!
         if not self.bot.user.mentioned_in(message):

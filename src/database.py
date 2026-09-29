@@ -695,3 +695,27 @@ def download_music_storage(filename: str, dest_filepath: str) -> bool:
     except Exception as e:
         print(f"Error downloading {filename} from Supabase storage bucket: {format_supabase_error(e)}")
         return False
+
+# ==================== AI History Functions ====================
+
+def get_ai_history(channel_id: int) -> list:
+    """Get the AI chat history for a channel."""
+    try:
+        response = supabase.table("ai_history").select("messages").eq("channel_id", str(channel_id)).execute()
+        if response.data:
+            return response.data[0].get("messages", [])
+        return []
+    except Exception as e:
+        print(f"Error fetching AI history: {format_supabase_error(e)}")
+        return []
+
+def save_ai_history(channel_id: int, messages: list):
+    """Save the AI chat history for a channel."""
+    try:
+        data = {
+            "channel_id": str(channel_id),
+            "messages": messages
+        }
+        supabase.table("ai_history").upsert(data).execute()
+    except Exception as e:
+        print(f"Error saving AI history: {format_supabase_error(e)}")
