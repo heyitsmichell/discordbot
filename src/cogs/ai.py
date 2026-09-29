@@ -106,7 +106,8 @@ Only add reactions if you genuinely feel like reacting. Strongly prefer custom s
                     messages=messages,
                     temperature=0.7,
                     max_tokens=1024,
-                    tools=tools_config
+                    tools=tools_config,
+                    tool_choice={"type": "function", "function": {"name": "search_web"}}
                 )
                 
                 response_message = response.choices[0].message
